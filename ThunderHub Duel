@@ -168,7 +168,7 @@ minBtn.MouseButton1Click:Connect(function() main.Visible=false end)
 
 -- UIScale on the main frame
 local uiScale=Instance.new("UIScale",main)
-uiScale.Scale=1
+uiScale.Scale=0.6
 
 -- Scale label + box in the header
 local scaleLbl=Instance.new("TextLabel",main)
@@ -180,8 +180,8 @@ scaleLbl.Font=Enum.Font.Gotham scaleLbl.TextXAlignment=Enum.TextXAlignment.Right
 local scaleBox=Instance.new("TextBox",main)
 scaleBox.Size=UDim2.new(0,42,0,24) scaleBox.Position=UDim2.new(1,-155,0,14)
 scaleBox.BackgroundColor3=Color3.fromRGB(10,10,14) scaleBox.BorderSizePixel=0
-scaleBox.Text="1.0" scaleBox.TextColor3=C.yellow
-scaleBox.PlaceholderText="1.0" scaleBox.PlaceholderColor3=Color3.fromRGB(80,80,90)
+scaleBox.Text="0.6" scaleBox.TextColor3=C.yellow
+scaleBox.PlaceholderText="0.6" scaleBox.PlaceholderColor3=Color3.fromRGB(80,80,90)
 scaleBox.TextSize=11 scaleBox.Font=Enum.Font.GothamBold
 scaleBox.TextXAlignment=Enum.TextXAlignment.Center scaleBox.ClearTextOnFocus=false
 Instance.new("UICorner",scaleBox).CornerRadius=UDim.new(0,5)
@@ -725,14 +725,24 @@ local function disableNoAnim() local c=lp.Character if c and savedAnim.a then sa
 
 -- ── Infinite Jump ──
 local ijC,jrC
+local lastJump = 0
 local function enableIJ()
     if jrC then return end
     jrC=UserInputService.JumpRequest:Connect(function()
         if not cfg.InfiniteJump then return end
+        local now = tick()
+        if now - lastJump < 0.35 then return end  -- cooldown prevents server reset
+        lastJump = now
         local c=lp.Character if not c then return end
         local hum=c:FindFirstChildOfClass("Humanoid") if not hum then return end
         if hum.Health <= 0 then return end
-        hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        -- only jump if already in the air (not on ground, which would double-jump)
+        local state = hum:GetState()
+        if state == Enum.HumanoidStateType.Freefall
+        or state == Enum.HumanoidStateType.Jumping
+        or state == Enum.HumanoidStateType.Landed then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
     end)
 end
 local function disableIJ() if ijC then ijC:Disconnect() ijC=nil end if jrC then jrC:Disconnect() jrC=nil end end
