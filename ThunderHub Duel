@@ -18,9 +18,8 @@ local pg        = lp:FindFirstChildOfClass("PlayerGui") or lp:WaitForChild("Play
 --  CONFIG
 -- ════════════════════════════════════
 local cfg = {
-    SpeedBoost=false, Speed=50,
-    StealBoost=false, Steal=30,
-    AntiRagdoll=false,
+    CarrySpeed=false, CarrySpeedValue=50,
+    NormalSpeed=34,
     AutoSteal=false, GrabRadius=20,
     AutoDuel=false,
     AutoBat=false,
@@ -38,7 +37,7 @@ local cfg = {
     OverheadSpeed=false,
     DropBR=false,
     AutoPlay=false,
-    CarrySpeed=false, NormalSpeed=16,
+    RagdollTP=false,
 }
 
 local setters = {}
@@ -167,33 +166,35 @@ minBtn.Font=Enum.Font.Gotham minBtn.TextSize=10
 Instance.new("UICorner",minBtn).CornerRadius=UDim.new(0,6)
 minBtn.MouseButton1Click:Connect(function() main.Visible=false end)
 
--- UI SCALE — type 0.5 to 2.0 then press Enter
+-- UIScale on the main frame
 local uiScale=Instance.new("UIScale",main)
 uiScale.Scale=1
 
+-- Scale label + box in the header
 local scaleLbl=Instance.new("TextLabel",main)
-scaleLbl.Size=UDim2.new(0,34,0,14) scaleLbl.Position=UDim2.new(1,-192,0,10)
-scaleLbl.BackgroundTransparency=1 scaleLbl.Text="scale:"
-scaleLbl.TextColor3=Color3.fromRGB(120,120,130) scaleLbl.TextSize=9
+scaleLbl.Size=UDim2.new(0,36,0,24) scaleLbl.Position=UDim2.new(1,-196,0,14)
+scaleLbl.BackgroundTransparency=1 scaleLbl.Text="scale"
+scaleLbl.TextColor3=Color3.fromRGB(100,100,110) scaleLbl.TextSize=9
 scaleLbl.Font=Enum.Font.Gotham scaleLbl.TextXAlignment=Enum.TextXAlignment.Right
 
 local scaleBox=Instance.new("TextBox",main)
-scaleBox.Size=UDim2.new(0,44,0,22) scaleBox.Position=UDim2.new(1,-158,0,15)
+scaleBox.Size=UDim2.new(0,42,0,24) scaleBox.Position=UDim2.new(1,-155,0,14)
 scaleBox.BackgroundColor3=Color3.fromRGB(10,10,14) scaleBox.BorderSizePixel=0
 scaleBox.Text="1.0" scaleBox.TextColor3=C.yellow
 scaleBox.PlaceholderText="1.0" scaleBox.PlaceholderColor3=Color3.fromRGB(80,80,90)
-scaleBox.TextSize=10 scaleBox.Font=Enum.Font.GothamBold
+scaleBox.TextSize=11 scaleBox.Font=Enum.Font.GothamBold
 scaleBox.TextXAlignment=Enum.TextXAlignment.Center scaleBox.ClearTextOnFocus=false
 Instance.new("UICorner",scaleBox).CornerRadius=UDim.new(0,5)
 local scaleSk=Instance.new("UIStroke",scaleBox) scaleSk.Color=C.numStroke scaleSk.Thickness=1
-scaleBox.Focused:Connect(function() TweenService:Create(scaleSk,TweenInfo.new(0.12),{Color=C.yellow}):Play() end)
+scaleBox.Focused:Connect(function()
+    TweenService:Create(scaleSk,TweenInfo.new(0.12),{Color=C.yellow}):Play()
+end)
 scaleBox.FocusLost:Connect(function()
     TweenService:Create(scaleSk,TweenInfo.new(0.2),{Color=C.numStroke}):Play()
     local n=tonumber(scaleBox.Text)
     if n then
-        n=math.clamp(math.floor(n*10+0.5)/10, 0.4, 2.0)
-        scaleBox.Text=tostring(n)
-        uiScale.Scale=n
+        n=math.clamp(math.floor(n*10+0.5)/10,0.4,2.0)
+        scaleBox.Text=tostring(n) uiScale.Scale=n
     else scaleBox.Text="1.0" uiScale.Scale=1 end
 end)
 
@@ -385,46 +386,111 @@ task.spawn(function()
 end)
 
 -- ════════════════════════════════════
---  SIDE STRIP
+--  SIDE PILLS  (draggable, click-safe)
 -- ════════════════════════════════════
--- side buttons are individually draggable, no container needed
-
 local twS=TweenInfo.new(0.15,Enum.EasingStyle.Quad,Enum.EasingDirection.Out)
-local function mkSideBtn(txt, icon, yOff)
-    -- Each button lives directly on screenGui so it can be dragged freely
-    local btn=Instance.new("TextButton",screenGui)
-    btn.Size=UDim2.new(0,44,0,44)
-    btn.Position=UDim2.new(1,-58,0,yOff+8)   -- initial position mirrors old SS layout
-    btn.BackgroundColor3=Color3.fromRGB(12,12,16) btn.BorderSizePixel=0 btn.AutoButtonColor=false btn.Text=""
-    btn.ZIndex=200
-    Instance.new("UICorner",btn).CornerRadius=UDim.new(0,9)
-    local sk=Instance.new("UIStroke",btn) sk.Color=Color3.fromRGB(35,35,40) sk.Thickness=1.5
-    local il=Instance.new("TextLabel",btn) il.Size=UDim2.new(1,0,0,20) il.Position=UDim2.new(0,0,0,4)
-    il.BackgroundTransparency=1 il.Text=icon il.TextSize=16 il.TextXAlignment=Enum.TextXAlignment.Center il.ZIndex=201
-    local lb=Instance.new("TextLabel",btn) lb.Size=UDim2.new(1,-2,0,18) lb.Position=UDim2.new(0,1,0,24)
-    lb.BackgroundTransparency=1 lb.Text=txt lb.TextColor3=Color3.fromRGB(180,180,180)
-    lb.TextSize=6.5 lb.Font=Enum.Font.GothamBold lb.TextWrapped=true lb.TextXAlignment=Enum.TextXAlignment.Center lb.ZIndex=201
-    local dot=Instance.new("Frame",btn) dot.Size=UDim2.new(0,6,0,6) dot.Position=UDim2.new(1,-9,0,3)
+
+-- pill width=142, gap=6, 3 cols → total=3*142+2*6=438px
+-- col positions from right edge:
+--   col3 = 1, -148   col2 = 1, -296   col1 = 1, -444
+-- row y spacing = 44px (38 pill + 6 gap), starting at y=80
+local PW=110  -- pill width
+local PH=30   -- pill height
+local PG=5    -- gap between pills
+local PC1=-(PW)           -- col 3 (rightmost)  offset from Scale=1
+local PC2=-(PW*2+PG)      -- col 2
+local PC3=-(PW*3+PG*2)    -- col 1 (leftmost)
+local function pRow(r) return 80 + (r-1)*(PH+PG) end  -- y for grid row r
+
+local function mkSideBtn(txt, icon, xOff, yOff)
+    local pill=Instance.new("TextButton",screenGui)
+    pill.Size=UDim2.new(0,PW,0,PH)
+    pill.Position=UDim2.new(1,xOff,0,yOff)
+    pill.BackgroundColor3=Color3.fromRGB(12,12,20)
+    pill.BorderSizePixel=0 pill.AutoButtonColor=false pill.Text=""
+    pill.ZIndex=200
+    Instance.new("UICorner",pill).CornerRadius=UDim.new(1,0)
+    local sk=Instance.new("UIStroke",pill) sk.Color=Color3.fromRGB(80,50,200) sk.Thickness=1.5
+
+    local il=Instance.new("TextLabel",pill)
+    il.Size=UDim2.new(0,18,1,0) il.Position=UDim2.new(0,5,0,0)
+    il.BackgroundTransparency=1 il.Text=icon il.TextSize=11
+    il.TextXAlignment=Enum.TextXAlignment.Center il.ZIndex=201
+
+    local lb=Instance.new("TextLabel",pill)
+    lb.Size=UDim2.new(1,-30,1,0) lb.Position=UDim2.new(0,25,0,0)
+    lb.BackgroundTransparency=1 lb.Text=txt
+    lb.TextColor3=Color3.fromRGB(200,200,230)
+    lb.TextSize=9 lb.Font=Enum.Font.GothamBold
+    lb.TextXAlignment=Enum.TextXAlignment.Left lb.ZIndex=201
+    lb.TextWrapped=true
+
+    local dot=Instance.new("Frame",pill)
+    dot.Size=UDim2.new(0,5,0,5) dot.Position=UDim2.new(1,-8,0,3)
     dot.BackgroundColor3=Color3.fromRGB(40,40,45) dot.BorderSizePixel=0 dot.ZIndex=202
     Instance.new("UICorner",dot).CornerRadius=UDim.new(1,0)
 
-    -- drag each button individually
-    drag(btn)
+    -- drag that does NOT fire click
+    local dragActive=false
+    local dragStart=nil local startPos=nil local hasMoved=false
+
+    pill.InputBegan:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
+            dragActive=true hasMoved=false
+            dragStart=i.Position startPos=pill.Position
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(i)
+        if dragActive and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then
+            local d=i.Position-dragStart
+            if d.Magnitude>5 then
+                hasMoved=true
+                pill.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+d.X,startPos.Y.Scale,startPos.Y.Offset+d.Y)
+            end
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
+            dragActive=false
+        end
+    end)
+
+    local clickCb=nil
+    pill.MouseButton1Click:Connect(function()
+        if hasMoved then hasMoved=false return end
+        if clickCb then clickCb() end
+    end)
 
     local function activate(on)
-        TweenService:Create(sk,twS,{Color=on and C.yellow or Color3.fromRGB(35,35,40)}):Play()
-        TweenService:Create(lb,twS,{TextColor3=on and C.white or Color3.fromRGB(180,180,180)}):Play()
-        TweenService:Create(dot,twS,{BackgroundColor3=on and C.yellow or Color3.fromRGB(40,40,45)}):Play()
+        TweenService:Create(pill,twS,{BackgroundColor3=on and Color3.fromRGB(20,55,20) or Color3.fromRGB(12,12,20)}):Play()
+        TweenService:Create(lb,twS,{TextColor3=on and Color3.fromRGB(80,230,100) or Color3.fromRGB(200,200,230)}):Play()
+        TweenService:Create(sk,twS,{Color=on and Color3.fromRGB(60,210,80) or Color3.fromRGB(80,50,200)}):Play()
+        TweenService:Create(dot,twS,{BackgroundColor3=on and Color3.fromRGB(60,210,80) or Color3.fromRGB(40,40,45)}):Play()
     end
-    return btn, activate
+
+    local function setClick(fn) clickCb=fn end
+    return pill, activate, setClick
 end
 
-local sAutoLeft,  acLeft  = mkSideBtn("AUTO\nLEFT",  "⬅️", 22)
-local sAutoDuel,  acDuel  = mkSideBtn("AUTO\nDUEL",  "⚔️", 72)
-local sAutoRight, acRight = mkSideBtn("AUTO\nRIGHT", "➡️", 122)
-local sBatAim,    acBat   = mkSideBtn("BAT\nAIMBOT", "🏏", 172)
-local sDropBR,    acDrop  = mkSideBtn("DROP\nBR",    "🧠", 222)
-local sCarry,     acCarry = mkSideBtn("CARRY\nSPD",  "⚡", 272)
+-- table to track all pills by name for save/load
+local allPills = {}
+
+-- 3-column grid:  row 1 → row 2 → row 3 → row 4
+--   col1(left) col2(mid) col3(right)
+-- row 1
+local sAutoLeft,  acLeft,  clkLeft  = mkSideBtn("AUTO LEFT",  "⬅️", PC3, pRow(1)) allPills["autoLeft"]  = sAutoLeft
+local sAutoDuel,  acDuel,  clkDuel  = mkSideBtn("AUTO DUEL",  "⚔️", PC2, pRow(1)) allPills["autoDuel"]  = sAutoDuel
+local sAutoRight, acRight, clkRight = mkSideBtn("AUTO RIGHT", "➡️", PC1, pRow(1)) allPills["autoRight"] = sAutoRight
+-- row 2
+local sBatAim,    acBat,   clkBat   = mkSideBtn("BAT AIMBOT", "🏏", PC3, pRow(2)) allPills["batAimbot"] = sBatAim
+local sDropBR,    acDrop,  clkDrop  = mkSideBtn("DROP BR",    "🧠", PC2, pRow(2)) allPills["dropBR"]    = sDropBR
+local sCarry,     acCarry, clkCarry = mkSideBtn("CARRY SPD",  "⚡", PC1, pRow(2)) allPills["carrySPD"]  = sCarry
+-- row 3
+local sInfJump,   acInfJ,  clkInfJ  = mkSideBtn("INF JUMP",   "🚀", PC3, pRow(3)) allPills["infJump"]   = sInfJump
+local sBatAimPill,acBatP,  clkBatP  = mkSideBtn("BAT AIMBOT", "🏏", PC2, pRow(3)) allPills["batAimPill"]= sBatAimPill
+local sMeleeAim,  acMelP,  clkMelP  = mkSideBtn("MELEE AIM",  "👊", PC1, pRow(3)) allPills["meleeAim"]  = sMeleeAim
+-- row 4
+local sRagTP,     acRagTP, clkRagTP = mkSideBtn("RAGDOLL TP", "🌀", PC3, pRow(4)) allPills["ragTP"]     = sRagTP
 
 -- ════════════════════════════════════
 --  FEATURE IMPLEMENTATIONS
@@ -436,12 +502,25 @@ local function fireRemote(kw)
     pcall(function() for _,r in pairs(ReplicatedStorage:GetDescendants()) do if r:IsA("RemoteEvent") and r.Name:lower():find(kw) then r:FireServer() end end end)
 end
 
--- ── Save Config ──
+-- ── Save / Load Config ──
+local CONFIG_FILE = "ThunderHub_Config.json"
+
 local function saveConfig()
     pcall(function()
-        if writefile then
-            writefile("ThunderHub_Config.json",HttpService:JSONEncode(cfg))
-            pcall(function() StarterGui:SetCore("SendNotification",{Title="ThunderHub";Text="Config saved!";Duration=3}) end)
+        if not writefile then return end
+        local data = {}
+        for k,v in pairs(cfg) do data[k]=v end
+        writefile(CONFIG_FILE, HttpService:JSONEncode(data))
+        pcall(function() StarterGui:SetCore("SendNotification",{Title="⚡ ThunderHub";Text="Config saved!";Duration=3}) end)
+    end)
+end
+
+local function loadConfig()
+    pcall(function()
+        if not readfile or not isfile or not isfile(CONFIG_FILE) then return end
+        local data = HttpService:JSONDecode(readfile(CONFIG_FILE))
+        for k,v in pairs(data) do
+            if cfg[k] ~= nil then cfg[k] = v end
         end
     end)
 end
@@ -467,24 +546,83 @@ local function disableSteal() stealActive=false stopStealLoop() end
 -- ── Circle for steal/duel ──
 local circleParts={} local PC=65
 local function createCircle() for _,p in ipairs(circleParts) do pcall(function() p:Destroy() end) end table.clear(circleParts) for i=1,PC do local p=Instance.new("Part") p.Anchored=true p.CanCollide=false p.Material=Enum.Material.Neon p.Color=C.yellow p.Transparency=0.35 p.Size=Vector3.new(1,0.2,0.3) p.Parent=workspace table.insert(circleParts,p) end end
-RunService.RenderStepped:Connect(function() if not cfg.AutoSteal and not cfg.AutoDuel then return end local hrp=sGetHRP() if not hrp then return end if #circleParts==0 then createCircle() end for i,p in ipairs(circleParts) do local a1=math.rad((i-1)/PC*360) local a2=math.rad(i/PC*360) local p1=Vector3.new(math.cos(a1),0,math.sin(a1))*cfg.GrabRadius local p2=Vector3.new(math.cos(a2),0,math.sin(a2))*cfg.GrabRadius local c=(p1+p2)/2+hrp.Position p.Size=Vector3.new((p2-p1).Magnitude,0.2,0.3) p.CFrame=CFrame.new(c,c+Vector3.new(p2.X-p1.X,0,p2.Z-p1.Z))*CFrame.Angles(0,math.pi/2,0) end end)
+local function clearCircle() for _,p in ipairs(circleParts) do pcall(function() p:Destroy() end) end table.clear(circleParts) end
+RunService.RenderStepped:Connect(function()
+    if not cfg.AutoSteal and not cfg.AutoDuel then
+        if #circleParts > 0 then clearCircle() end
+        return
+    end
+    local hrp=sGetHRP() if not hrp then return end
+    if #circleParts==0 then createCircle() end
+    for i,p in ipairs(circleParts) do local a1=math.rad((i-1)/PC*360) local a2=math.rad(i/PC*360) local p1=Vector3.new(math.cos(a1),0,math.sin(a1))*cfg.GrabRadius local p2=Vector3.new(math.cos(a2),0,math.sin(a2))*cfg.GrabRadius local c=(p1+p2)/2+hrp.Position p.Size=Vector3.new((p2-p1).Magnitude,0.2,0.3) p.CFrame=CFrame.new(c,c+Vector3.new(p2.X-p1.X,0,p2.Z-p1.Z))*CFrame.Angles(0,math.pi/2,0) end
+end)
 
 -- ── Auto Duel ──
 local duelPath={} local duelIdx=1 local duelMoving=false local duelConn=nil local duelPend=false
-local function startDuel() local root=lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") if not root then return end duelMoving=true duelPend=false if (root.Position-Vector3.new(-475,-7,96)).Magnitude>(root.Position-Vector3.new(-474,-7,23)).Magnitude then duelPath={{position=Vector3.new(-475,-7,96),speed=59},{position=Vector3.new(-483,-5,95),speed=59},{position=Vector3.new(-487,-5,95),speed=55},{position=Vector3.new(-492,-5,95),speed=55},{position=Vector3.new(-473,-7,95),speed=29},{position=Vector3.new(-473,-7,11),speed=29}} else duelPath={{position=Vector3.new(-474,-7,23),speed=55},{position=Vector3.new(-484,-5,24),speed=55},{position=Vector3.new(-488,-5,24),speed=55},{position=Vector3.new(-493,-5,25),speed=55},{position=Vector3.new(-473,-7,25),speed=29},{position=Vector3.new(-474,-7,112),speed=29}} end duelIdx=1 if duelConn then duelConn:Disconnect() end duelConn=RunService.Stepped:Connect(function() if not cfg.AutoDuel or not duelMoving then return end local c=lp.Character local r=c and c:FindFirstChild("HumanoidRootPart") if not r then return end local wp=duelPath[duelIdx] if not wp then duelMoving=false return end local dist=(r.Position-wp.position).Magnitude local stop=duelIdx==#duelPath and 1.2 or 2.5 if dist<stop then if duelIdx==#duelPath then r.AssemblyLinearVelocity=Vector3.zero if not duelPend then duelPend=true task.delay(0.8,function() if not cfg.AutoDuel then return end duelIdx=1 duelPend=false end) end else duelIdx=duelIdx+1 end else local dir=(wp.position-r.Position).Unit local spd=wp.speed if duelIdx==#duelPath and dist<8 then spd=math.max(12,spd*(dist/8)) end r.AssemblyLinearVelocity=Vector3.new(dir.X*spd,r.AssemblyLinearVelocity.Y,dir.Z*spd) end end) end
-local function stopDuel() duelMoving=false duelPend=false if duelConn then duelConn:Disconnect() duelConn=nil end local r=lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") if r then r.AssemblyLinearVelocity=Vector3.zero end end
+local function startDuel()
+    local c=lp.Character if not c then return end
+    local hum=c:FindFirstChildOfClass("Humanoid") if not hum then return end
+    local root=c:FindFirstChild("HumanoidRootPart") if not root then return end
+    duelMoving=true duelPend=false
+    if (root.Position-Vector3.new(-475,-7,96)).Magnitude>(root.Position-Vector3.new(-474,-7,23)).Magnitude then
+        duelPath={{position=Vector3.new(-475,-7,96)},{position=Vector3.new(-483,-5,95)},{position=Vector3.new(-487,-5,95)},{position=Vector3.new(-492,-5,95)},{position=Vector3.new(-473,-7,95)},{position=Vector3.new(-473,-7,11)}}
+    else
+        duelPath={{position=Vector3.new(-474,-7,23)},{position=Vector3.new(-484,-5,24)},{position=Vector3.new(-488,-5,24)},{position=Vector3.new(-493,-5,25)},{position=Vector3.new(-473,-7,25)},{position=Vector3.new(-474,-7,112)}}
+    end
+    duelIdx=1
+    if duelConn then duelConn:Disconnect() end
+    duelConn=RunService.Stepped:Connect(function()
+        if not cfg.AutoDuel or not duelMoving then return end
+        local ch=lp.Character local h=ch and ch:FindFirstChildOfClass("Humanoid") if not h then return end
+        local wp=duelPath[duelIdx] if not wp then duelMoving=false return end
+        local r=ch:FindFirstChild("HumanoidRootPart") if not r then return end
+        local dist=(r.Position-wp.position).Magnitude
+        local stopDist=duelIdx==#duelPath and 1.5 or 3
+        if dist<stopDist then
+            if duelIdx==#duelPath then
+                h:MoveTo(wp.position)
+                if not duelPend then duelPend=true task.delay(0.8,function() if not cfg.AutoDuel then return end duelIdx=1 duelPend=false end) end
+            else duelIdx=duelIdx+1 end
+        else
+            h:MoveTo(wp.position)
+        end
+    end)
+end
+local function stopDuel()
+    duelMoving=false duelPend=false
+    if duelConn then duelConn:Disconnect() duelConn=nil end
+end
 
 -- ── Auto Left / Right paths ──
-local pathActive=false local lastFlat=Vector3.zero local alEnabled=false local arEnabled=false
+local pathActive=false local alEnabled=false local arEnabled=false
 local sp1={{pos=Vector3.new(-470.6,-5.9,34.4)},{pos=Vector3.new(-484.2,-3.9,21.4)},{pos=Vector3.new(-475.6,-5.8,29.3)},{pos=Vector3.new(-473.4,-5.9,111.0)}}
 local sp2={{pos=Vector3.new(-474.7,-5.9,91.0)},{pos=Vector3.new(-483.4,-3.9,97.3)},{pos=Vector3.new(-474.7,-5.9,91.0)},{pos=Vector3.new(-476.1,-5.5,25.4)}}
-local function pathMove(hrp,cur,nxt,spd) local conn conn=RunService.Heartbeat:Connect(function() if not pathActive then conn:Disconnect() hrp.AssemblyLinearVelocity=Vector3.zero return end local pos=hrp.Position local tgt=Vector3.new(cur.X,pos.Y,cur.Z) local dir=tgt-pos local dist=dir.Magnitude if dist<=1.35 then conn:Disconnect() hrp.AssemblyLinearVelocity=Vector3.zero return end local md=dir.Unit if nxt then local nd=(Vector3.new(nxt.X,pos.Y,nxt.Z)-pos).Unit md=(md+nd*0.45).Unit end if lastFlat.Magnitude>0.1 then md=(md*0.88+lastFlat.Unit*0.12).Unit end local vel=Vector3.new(md.X*spd,hrp.AssemblyLinearVelocity.Y,md.Z*spd) hrp.AssemblyLinearVelocity=vel lastFlat=Vector3.new(vel.X,0,vel.Z) end) while pathActive and (Vector3.new(hrp.Position.X,0,hrp.Position.Z)-Vector3.new(cur.X,0,cur.Z)).Magnitude>1.35 do RunService.Heartbeat:Wait() end end
-local function runPath(sp) local hrp=(lp.Character or lp.CharacterAdded:Wait()):WaitForChild("HumanoidRootPart") for i,p in ipairs(sp) do if not pathActive then return end local spd=i>2 and 29.6 or 59.2 pathMove(hrp,p.pos,sp[i+1] and sp[i+1].pos,spd) if i==2 then task.wait(0.2) else task.wait(0.01) end end end
+
+local function runPath(sp)
+    local c=lp.Character or lp.CharacterAdded:Wait()
+    local hum=c:WaitForChild("Humanoid")
+    local hrp=c:WaitForChild("HumanoidRootPart")
+    for i,p in ipairs(sp) do
+        if not pathActive then return end
+        hum:MoveTo(p.pos)
+        -- wait until close enough or timeout
+        local t=0
+        repeat task.wait(0.05) t=t+0.05
+            local dist=(hrp.Position-p.pos).Magnitude
+            if dist<3 then break end
+        until not pathActive or t>4
+        if i==2 then task.wait(0.2) else task.wait(0.05) end
+    end
+end
 local function startPath(sp) pathActive=true task.spawn(function() while pathActive do runPath(sp) task.wait(0.1) end end) end
-local function stopPath() pathActive=false lastFlat=Vector3.zero local hrp=lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") if hrp then hrp.AssemblyLinearVelocity=Vector3.zero end end
-local function enableAutoLeft() if arEnabled then stopPath() arEnabled=false cfg.AutoRight=false if setters.AutoRight then setters.AutoRight(false,true) end acRight(false) end alEnabled=true cfg.AutoLeft=true startPath(sp2) acLeft(true) if setters.AutoLeft then setters.AutoLeft(true,true) end end
+local function stopPath()
+    pathActive=false
+    local c=lp.Character local hum=c and c:FindFirstChildOfClass("Humanoid")
+    if hum then hum:MoveTo(lp.Character:FindFirstChild("HumanoidRootPart") and lp.Character.HumanoidRootPart.Position or Vector3.zero) end
+end
+local function enableAutoLeft() if arEnabled then stopPath() arEnabled=false cfg.AutoRight=false if setters.AutoRight then setters.AutoRight(false,true) end acRight(false) end alEnabled=true cfg.AutoLeft=true startPath(sp2) acLeft(true) end
 local function disableAutoLeft() alEnabled=false cfg.AutoLeft=false stopPath() acLeft(false) end
-local function enableAutoRight() if alEnabled then stopPath() alEnabled=false cfg.AutoLeft=false if setters.AutoLeft then setters.AutoLeft(false,true) end acLeft(false) end arEnabled=true cfg.AutoRight=true startPath(sp1) acRight(true) if setters.AutoRight then setters.AutoRight(true,true) end end
+local function enableAutoRight() if alEnabled then stopPath() alEnabled=false cfg.AutoLeft=false if setters.AutoLeft then setters.AutoLeft(false,true) end acLeft(false) end arEnabled=true cfg.AutoRight=true startPath(sp1) acRight(true) end
 local function disableAutoRight() arEnabled=false cfg.AutoRight=false stopPath() acRight(false) end
 
 -- ── Anti Ragdoll ──
@@ -492,10 +630,10 @@ local arMode=nil local arConns={} local arChar={} local arBoosting=false
 local function arCache() local c=lp.Character if not c then return false end local hum=c:FindFirstChildOfClass("Humanoid") local root=c:FindFirstChild("HumanoidRootPart") if not hum or not root then return false end arChar={c=c,h=hum,r=root} return true end
 local function arDisconn() for _,v in ipairs(arConns) do pcall(function() v:Disconnect() end) end arConns={} end
 local function arIsRag() if not arChar.h then return false end local s=arChar.h:GetState() if s==Enum.HumanoidStateType.Physics or s==Enum.HumanoidStateType.Ragdoll or s==Enum.HumanoidStateType.FallingDown then return true end local et=lp:GetAttribute("RagdollEndTime") if et then local sn=0 pcall(function() sn=workspace:GetServerTimeNow() end) if (et-sn)>0 then return true end end return false end
-local function arExit() if not arChar.h or not arChar.r then return end pcall(function() local sn=0 pcall(function() sn=workspace:GetServerTimeNow() end) lp:SetAttribute("RagdollEndTime",sn) end) for _,d in ipairs(arChar.c:GetDescendants()) do if d:IsA("BallSocketConstraint") or (d:IsA("Attachment") and d.Name:find("RagdollAttachment")) then d:Destroy() end end if not arBoosting then arBoosting=true arChar.h.WalkSpeed=400 end if arChar.h.Health>0 then arChar.h:ChangeState(Enum.HumanoidStateType.Running) end arChar.r.Anchored=false end
-local function arLoop() while arMode=="on" do task.wait() if arIsRag() then arExit() elseif arBoosting then arBoosting=false if arChar.h then arChar.h.WalkSpeed=16 end end end end
-local function enableAntiRag() if arMode=="on" then return end if not arCache() then return end arMode="on" table.insert(arConns,RunService.RenderStepped:Connect(function() local cam=workspace.CurrentCamera if cam and arChar.h then cam.CameraSubject=arChar.h end end)) table.insert(arConns,lp.CharacterAdded:Connect(function() arBoosting=false task.wait(0.5) arCache() end)) task.spawn(arLoop) end
-local function disableAntiRag() arMode=nil if arBoosting and arChar.h then arChar.h.WalkSpeed=16 end arBoosting=false arDisconn() arChar={} end
+local function arExit() if not arChar.h or not arChar.r then return end pcall(function() local sn=0 pcall(function() sn=workspace:GetServerTimeNow() end) lp:SetAttribute("RagdollEndTime",sn) end) for _,d in ipairs(arChar.c:GetDescendants()) do if d:IsA("BallSocketConstraint") or (d:IsA("Attachment") and d.Name:find("RagdollAttachment")) then d:Destroy() end end if arChar.h.Health>0 then arChar.h:ChangeState(Enum.HumanoidStateType.Running) end arChar.r.Anchored=false end
+local function arLoop() while arMode=="on" do task.wait() if arIsRag() then arExit() end end end
+local function enableAntiRag() if arMode=="on" then return end if not arCache() then return end arMode="on" table.insert(arConns,RunService.RenderStepped:Connect(function() local cam=workspace.CurrentCamera if cam and arChar.h then cam.CameraSubject=arChar.h end end)) table.insert(arConns,lp.CharacterAdded:Connect(function() task.wait(0.5) arCache() end)) task.spawn(arLoop) end
+local function disableAntiRag() arMode=nil arDisconn() arChar={} end
 
 -- ── Melee Aimbot ──
 local MA={on=false,circ=nil,align=nil,att=nil,conn=nil}
@@ -517,7 +655,19 @@ local function disableNoAnim() local c=lp.Character if c and savedAnim.a then sa
 
 -- ── Infinite Jump ──
 local ijC,jrC
-local function enableIJ() if jrC then return end ijC=RunService.Heartbeat:Connect(function() if not cfg.InfiniteJump then return end local c=lp.Character if not c then return end local hrp=c:FindFirstChild("HumanoidRootPart") if hrp and hrp.AssemblyLinearVelocity.Y<-80 then hrp.AssemblyLinearVelocity=Vector3.new(hrp.AssemblyLinearVelocity.X,-80,hrp.AssemblyLinearVelocity.Z) end end) jrC=UserInputService.JumpRequest:Connect(function() if not cfg.InfiniteJump then return end local c=lp.Character if not c then return end local hrp=c:FindFirstChild("HumanoidRootPart") if hrp then hrp.AssemblyLinearVelocity=Vector3.new(hrp.AssemblyLinearVelocity.X,50,hrp.AssemblyLinearVelocity.Z) end end) end
+local function enableIJ()
+    if jrC then return end
+    jrC=UserInputService.JumpRequest:Connect(function()
+        if not cfg.InfiniteJump then return end
+        local c=lp.Character if not c then return end
+        local hrp=c:FindFirstChild("HumanoidRootPart") if not hrp then return end
+        local hum=c:FindFirstChildOfClass("Humanoid") if not hum then return end
+        -- use a short BodyVelocity Y-only burst — much safer than AssemblyLinearVelocity
+        local bv=Instance.new("BodyVelocity")
+        bv.Velocity=Vector3.new(0,50,0) bv.MaxForce=Vector3.new(0,1e5,0) bv.P=1e4 bv.Parent=hrp
+        game:GetService("Debris"):AddItem(bv,0.1)
+    end)
+end
 local function disableIJ() if ijC then ijC:Disconnect() ijC=nil end if jrC then jrC:Disconnect() jrC=nil end end
 enableIJ()
 
@@ -527,7 +677,26 @@ local function disableSpin() local c=lp.Character if not c then return end local
 
 -- ── Bat Aimbot ──
 local batAimC=nil
-local function enableBatAim() if batAimC then return end batAimC=RunService.Heartbeat:Connect(function() if not cfg.BatAimbot then return end local c=lp.Character if not c then return end local h=c:FindFirstChild("HumanoidRootPart") local hum=c:FindFirstChildOfClass("Humanoid") if not h or not hum then return end local best,bd,bt=nil,math.huge,nil for _,p in ipairs(Players:GetPlayers()) do if p~=lp and p.Character then local eh=p.Character:FindFirstChild("HumanoidRootPart") local tor=p.Character:FindFirstChild("UpperTorso") or p.Character:FindFirstChild("Torso") local ph=p.Character:FindFirstChildOfClass("Humanoid") if eh and ph and ph.Health>0 then local d=(eh.Position-h.Position).Magnitude if d<bd then bd=d best=eh bt=tor or eh end end end end local bat=nil local bp=lp:FindFirstChildOfClass("Backpack") if c then for _,ch in ipairs(c:GetChildren()) do if ch:IsA("Tool") and ch.Name:lower():find("bat") then bat=ch end end end if not bat and bp then for _,ch in ipairs(bp:GetChildren()) do if ch:IsA("Tool") and ch.Name:lower():find("bat") then bat=ch end end end if bat and bat.Parent~=c then pcall(function() hum:EquipTool(bat) end) end if best and bt then local flat=Vector3.new((bt.Position-h.Position).X,0,(bt.Position-h.Position).Z) if flat.Magnitude>1.5 then local md=flat.Unit h.AssemblyLinearVelocity=Vector3.new(md.X*55,h.AssemblyLinearVelocity.Y,md.Z*55) else local tv=best.AssemblyLinearVelocity h.AssemblyLinearVelocity=Vector3.new(tv.X,h.AssemblyLinearVelocity.Y,tv.Z) end end end) end
+local function enableBatAim() if batAimC then return end batAimC=RunService.Heartbeat:Connect(function()
+    if not cfg.BatAimbot then return end
+    local c=lp.Character if not c then return end
+    local h=c:FindFirstChild("HumanoidRootPart") local hum=c:FindFirstChildOfClass("Humanoid") if not h or not hum then return end
+    local best,bd=nil,math.huge
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p~=lp and p.Character then
+            local eh=p.Character:FindFirstChild("HumanoidRootPart")
+            local ph=p.Character:FindFirstChildOfClass("Humanoid")
+            if eh and ph and ph.Health>0 then
+                local d=(eh.Position-h.Position).Magnitude if d<bd then bd=d best=eh end
+            end
+        end
+    end
+    local bat=nil local bp=lp:FindFirstChildOfClass("Backpack")
+    if c then for _,ch in ipairs(c:GetChildren()) do if ch:IsA("Tool") and ch.Name:lower():find("bat") then bat=ch end end end
+    if not bat and bp then for _,ch in ipairs(bp:GetChildren()) do if ch:IsA("Tool") and ch.Name:lower():find("bat") then bat=ch end end end
+    if bat and bat.Parent~=c then pcall(function() hum:EquipTool(bat) end) end
+    if best then hum:MoveTo(best.Position) end
+end) end
 local function disableBatAim() if batAimC then batAimC:Disconnect() batAimC=nil end end
 
 -- ── Galaxy Sky ──
@@ -552,48 +721,21 @@ local overheadGui=nil
 local function enableOverhead() if overheadGui then overheadGui:Destroy() overheadGui=nil end local c=lp.Character if not c then return end local hrp=c:WaitForChild("HumanoidRootPart") local head=c:WaitForChild("Head") local bg=Instance.new("BillboardGui") bg.Size=UDim2.new(0,100,0,18) bg.StudsOffset=Vector3.new(0,2.4,0) bg.AlwaysOnTop=true bg.Adornee=head bg.ResetOnSpawn=false bg.LightInfluence=0 bg.Parent=head local lbl=Instance.new("TextLabel") lbl.Size=UDim2.new(1,0,1,0) lbl.BackgroundTransparency=1 lbl.Text="⚡ speed: 0" lbl.TextColor3=C.yellow lbl.TextStrokeColor3=Color3.fromRGB(0,0,0) lbl.TextStrokeTransparency=0.2 lbl.TextSize=12 lbl.Font=Enum.Font.GothamBold lbl.TextXAlignment=Enum.TextXAlignment.Center lbl.Parent=bg overheadGui=bg task.spawn(function() while bg.Parent and cfg.OverheadSpeed do local vel=hrp.AssemblyLinearVelocity local spd=math.floor(Vector3.new(vel.X,0,vel.Z).Magnitude+0.5) lbl.Text="⚡ speed: "..spd task.wait(0.05) end if bg and bg.Parent then bg:Destroy() end overheadGui=nil end) end
 local function disableOverhead() if overheadGui then overheadGui:Destroy() overheadGui=nil end end
 
--- ── Drop BR ── (fast up, fast down, no character reset)
+-- ── Drop BR ── (natural jump via ChangeState — no teleport, no anti-cheat)
 local dropping=false
 local function enableDropBR()
     if dropping then return end dropping=true
     local c=lp.Character if not c then dropping=false return end
-    local hrp=c:FindFirstChild("HumanoidRootPart") if not hrp then dropping=false return end
     local hum=c:FindFirstChildOfClass("Humanoid") if not hum then dropping=false return end
     task.spawn(function()
-        -- disable fall damage state so landing doesn't kill character
-        pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false) end)
-        pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false) end)
-
-        -- keep health maxed during the whole move
-        local healthConn=RunService.RenderStepped:Connect(function()
-            pcall(function() if hum.Health < hum.MaxHealth then hum.Health = hum.MaxHealth end end)
-        end)
-
-        -- blast up with BodyVelocity
-        local bv=Instance.new("BodyVelocity")
-        bv.Velocity=Vector3.new(0,200,0) bv.MaxForce=Vector3.new(0,1e7,0) bv.P=1e6
-        bv.Parent=hrp
-        task.wait(0.12)
-        bv:Destroy()
-
-        -- fire drop remotes at the peak
+        -- just make the character jump naturally
+        hum.Jump = true
+        hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        task.wait(0.15)
+        -- fire drop remotes at peak of jump
         fireRemote("drop") fireRemote("unequip") fireRemote("release")
         pcall(function() hum:UnequipTools() end)
-
-        -- slam back down with BodyVelocity
-        task.wait(0.08)
-        local bvDown=Instance.new("BodyVelocity")
-        bvDown.Velocity=Vector3.new(0,-200,0) bvDown.MaxForce=Vector3.new(0,1e7,0) bvDown.P=1e6
-        bvDown.Parent=hrp
-        task.wait(0.15)
-        bvDown:Destroy()
-
-        -- wait to land then cleanup
         task.wait(0.3)
-        healthConn:Disconnect()
-        pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true) end)
-        pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.GettingUp, true) end)
-
         dropping=false cfg.DropBR=false
         if setters.DropBR then setters.DropBR(false,true) end
     end)
@@ -604,29 +746,96 @@ local apConn=nil
 local function enableAutoPlay() if apConn then return end apConn=RunService.Heartbeat:Connect(function() if not cfg.AutoPlay then return end local c=lp.Character if not c then return end local hum=c:FindFirstChildOfClass("Humanoid") if not hum then return end for _,obj in pairs(workspace:GetDescendants()) do if obj:IsA("BasePart") then local n=obj.Name:lower() if n:find("brainrot") or n:find("brain") or n:find("br_") then hum:MoveTo(obj.Position) fireRemote("pickup") fireRemote("grab") task.wait(0.2) hum:MoveTo(Vector3.new(0,5,0)) fireRemote("drop") fireRemote("score") task.wait(0.2) end end end end) end
 local function disableAutoPlay() if apConn then apConn:Disconnect() apConn=nil end end
 
+-- ── Ragdoll TP ──
+-- Duel bases:  Base A (low Z  ~11-25)   Base B (high Z ~95-112)
+-- Rule: if you're near base B (high Z) when ragdolled → TP to base A and vice versa
+local DUEL_BASE_A = Vector3.new(-473, -5, 18)   -- left/low-Z base safe spot
+local DUEL_BASE_B = Vector3.new(-473, -5, 102)  -- right/high-Z base safe spot
+local DUEL_Z_MID  = 55  -- anything below this Z = base A side, above = base B side
+
+local ragTPConn = nil
+local function enableRagTP()
+    if ragTPConn then return end
+    ragTPConn = RunService.Heartbeat:Connect(function()
+        if not cfg.RagdollTP then return end
+        local c = lp.Character if not c then return end
+        local hum = c:FindFirstChildOfClass("Humanoid") if not hum then return end
+        local hrp = c:FindFirstChild("HumanoidRootPart") if not hrp then return end
+        local state = hum:GetState()
+        -- detect ragdoll / hit state
+        local isRag = (state == Enum.HumanoidStateType.Physics
+                    or state == Enum.HumanoidStateType.Ragdoll
+                    or state == Enum.HumanoidStateType.FallingDown)
+        -- also check RagdollEndTime attribute games sometimes use
+        if not isRag then
+            local et = lp:GetAttribute("RagdollEndTime")
+            if et then local sn=0 pcall(function() sn=workspace:GetServerTimeNow() end) if (et-sn)>0 then isRag=true end end
+        end
+        if not isRag then return end
+        -- decide which base to TP to based on current Z position
+        local myZ = hrp.Position.Z
+        local dest = myZ >= DUEL_Z_MID and DUEL_BASE_A or DUEL_BASE_B
+        -- teleport
+        pcall(function()
+            hrp.CFrame = CFrame.new(dest)
+        end)
+        -- force out of ragdoll state
+        pcall(function() hum:ChangeState(Enum.HumanoidStateType.GettingUp) end)
+        pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false) end)
+        task.wait(0.1)
+        pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true) end)
+        pcall(function() hum:ChangeState(Enum.HumanoidStateType.Running) end)
+        -- small cooldown so we don't TP every frame while ragdolled
+        task.wait(0.5)
+    end)
+end
+local function disableRagTP()
+    if ragTPConn then ragTPConn:Disconnect() ragTPConn=nil end
+end
+
 -- ════════════════════════════════════
---  SPEED LOOP
+--  SPEED SYSTEM  (quiet heartbeat only — no hooks that fight the server)
 -- ════════════════════════════════════
+-- ════════════════════════════════════
+--  SPEED SYSTEM  (BodyVelocity — never touches WalkSpeed, undetectable)
+-- ════════════════════════════════════
+local speedBV = nil
+
+local function applySpeed()
+    -- remove old
+    if speedBV then speedBV:Destroy() speedBV=nil end
+    if not cfg.CarrySpeed then return end
+    local c = lp.Character if not c then return end
+    local hrp = c:FindFirstChild("HumanoidRootPart") if not hrp then return end
+    local bv = Instance.new("BodyVelocity")
+    bv.Name = "TH_SpeedBV"
+    bv.MaxForce = Vector3.new(1e5, 0, 1e5) -- horizontal only, don't affect jumping
+    bv.Velocity = Vector3.zero
+    bv.P = 1e4
+    bv.Parent = hrp
+    speedBV = bv
+end
+
+lp.CharacterAdded:Connect(function(c)
+    speedBV = nil
+    task.wait(1)
+    applySpeed()
+end)
+
+-- Every heartbeat update the velocity direction
 RunService.Heartbeat:Connect(function()
-    local c=lp.Character if not c then return end
-    local hum=c:FindFirstChildOfClass("Humanoid") local hrp=c:FindFirstChild("HumanoidRootPart")
-    if not hum or not hrp then return end
-    -- CarrySpeed overrides everything
-    if cfg.CarrySpeed then
-        pcall(function() hum.WalkSpeed=30 end)
+    if not cfg.CarrySpeed or not speedBV or not speedBV.Parent then
+        if speedBV then speedBV:Destroy() speedBV=nil end
         return
     end
-    -- Speed boost: set WalkSpeed directly (works with all games)
-    if cfg.SpeedBoost then
-        pcall(function() hum.WalkSpeed=cfg.Speed end)
-    elseif cfg.StealBoost then
-        pcall(function() hum.WalkSpeed=cfg.Steal end)
-    end
-    -- Also push via velocity for games that reset WalkSpeed
-    local spd = cfg.StealBoost and cfg.Steal or (cfg.SpeedBoost and cfg.Speed or 0)
-    if spd > 0 and hum.MoveDirection.Magnitude > 0 then
-        local md = hum.MoveDirection
-        hrp.AssemblyLinearVelocity = Vector3.new(md.X*spd, hrp.AssemblyLinearVelocity.Y, md.Z*spd)
+    local c = lp.Character if not c then return end
+    local hum = c:FindFirstChild("Humanoid") if not hum then return end
+    local hrp = c:FindFirstChild("HumanoidRootPart") if not hrp then return end
+    local dir = hum.MoveDirection
+    if dir.Magnitude > 0.1 then
+        speedBV.Velocity = dir * cfg.CarrySpeedValue
+    else
+        speedBV.Velocity = Vector3.zero
     end
 end)
 
@@ -636,64 +845,47 @@ end)
 local L,R=2,178
 local function row(n) return (n-1)*46 end
 
--- ── ROW 1: SpinBot + SpinSpeed (at top as requested) ──
+-- ── ROW 1: SpinBot + SpinSpeed ──
 setters.SpinBot = mkToggle(scroll,"Spin Bot","🌀",L,row(1),function(v) cfg.SpinBot=v if v then enableSpin() else disableSpin() end end)
 mkNum(scroll,"Spin Speed",R,row(1),10,0,100,function(v) cfg.SpinSpeed=v if cfg.SpinBot then local hrp=lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") if hrp and hrp:FindFirstChild("ThunderSpin") then hrp.ThunderSpin.AngularVelocity=Vector3.new(0,v,0) end end end)
 
--- ── ROW 2: SpeedBoost + Speed ──
-setters.SpeedBoost = mkToggle(scroll,"Speed Boost","⚡",L,row(2),function(v) cfg.SpeedBoost=v if not v then local c=lp.Character local hum=c and c:FindFirstChildOfClass("Humanoid") if hum then pcall(function() hum.WalkSpeed=16 end) end end end)
-mkNum(scroll,"Speed",R,row(2),50,16,500,function(v) cfg.Speed=v if cfg.SpeedBoost then local c=lp.Character local hum=c and c:FindFirstChildOfClass("Humanoid") if hum then pcall(function() hum.WalkSpeed=v end) end end end)
+-- ── ROW 2: Carry Speed toggle + carry speed number ──
+setters.CarrySpeed = mkToggle(scroll,"Carry Speed","⚡",L,row(2),function(v) cfg.CarrySpeed=v applySpeed() end)
+mkNum(scroll,"Carry Spd",R,row(2),50,1,500,function(v) cfg.CarrySpeedValue=v applySpeed() end)
 
--- ── ROW 3: StealBoost + Carry Speed value ──
-setters.StealBoost = mkToggle(scroll,"Steal Boost","💨",L,row(3),function(v) cfg.StealBoost=v if not v then local c=lp.Character local hum=c and c:FindFirstChildOfClass("Humanoid") if hum then pcall(function() hum.WalkSpeed=16 end) end end end)
-mkNum(scroll,"Carry Speed",R,row(3),30,0,500,function(v) cfg.Steal=v if cfg.StealBoost then local c=lp.Character local hum=c and c:FindFirstChildOfClass("Humanoid") if hum then pcall(function() hum.WalkSpeed=v end) end end end)
+-- ── ROW 3: Save Config + Normal Speed ──
+mkAction(scroll,"Save Config","💾",L,row(3),saveConfig)
+mkNum(scroll,"Normal Spd",R,row(3),34,1,500,function(v) cfg.NormalSpeed=v end)
 
 -- ── ROW 4 ──
-mkAction(scroll,"Save Config","💾",L,row(4),saveConfig)
-setters.AutoBat = mkToggle(scroll,"Auto Bat","⚾",R,row(4),function(v) cfg.AutoBat=v if v then enableAutoBat() else disableAutoBat() end end)
+setters.AutoBat = mkToggle(scroll,"Auto Bat","⚾",L,row(4),function(v) cfg.AutoBat=v if v then enableAutoBat() else disableAutoBat() end end)
+setters.ESPPlayers = mkToggle(scroll,"ESP Players","👁️",R,row(4),function(v) cfg.ESPPlayers=v if v then enableESP() else disableESP() end end)
 
 -- ── ROW 5 ──
-setters.MeleeAimbot = mkToggle(scroll,"Melee Aimbot","👊",L,row(5),function(v) cfg.MeleeAimbot=v if v then enableMelee() else disableMelee() end end)
-setters.ESPPlayers = mkToggle(scroll,"ESP Players","👁️",R,row(5),function(v) cfg.ESPPlayers=v if v then enableESP() else disableESP() end end)
+setters.Optimizer = mkToggle(scroll,"Optimizer+XRay","🔧",L,row(5),function(v) cfg.Optimizer=v if v then enableOpt() end end)
+setters.AntiRagdoll = mkToggle(scroll,"Anti Ragdoll","🛡️",R,row(5),function(v) cfg.AntiRagdoll=v if v then enableAntiRag() else disableAntiRag() end end)
 
 -- ── ROW 6 ──
-setters.AutoDuel = mkToggle(scroll,"Auto Duel","⚔️",L,row(6),function(v) cfg.AutoDuel=v if v then startDuel() else stopDuel() end end)
-setters.Optimizer = mkToggle(scroll,"Optimizer+XRay","🔧",R,row(6),function(v) cfg.Optimizer=v if v then enableOpt() end end)
+setters.NoAnimation = mkToggle(scroll,"No Animation","🎭",L,row(6),function(v) cfg.NoAnimation=v if v then enableNoAnim() else disableNoAnim() end end)
 
 -- ── ROW 7 ──
-setters.AntiRagdoll = mkToggle(scroll,"Anti Ragdoll","🛡️",L,row(7),function(v) cfg.AntiRagdoll=v if v then enableAntiRag() else disableAntiRag() end end)
-setters.NoAnimation = mkToggle(scroll,"No Animation","🎭",R,row(7),function(v) cfg.NoAnimation=v if v then enableNoAnim() else disableNoAnim() end end)
+setters.AutoSteal = mkToggle(scroll,"Auto Steal","🎯",L,row(7),function(v) cfg.AutoSteal=v if v then createCircle() enableSteal() else for _,p in ipairs(circleParts) do p:Destroy() end disableSteal() end end)
+mkNum(scroll,"Grab Radius",R,row(7),20,5,200,function(v) cfg.GrabRadius=v end)
 
 -- ── ROW 8 ──
-setters.AutoSteal = mkToggle(scroll,"Auto Steal","🎯",L,row(8),function(v) cfg.AutoSteal=v if v then createCircle() enableSteal() else for _,p in ipairs(circleParts) do p:Destroy() end disableSteal() end end)
-setters.InfiniteJump = mkToggle(scroll,"Infinite Jump","🚀",R,row(8),function(v) cfg.InfiniteJump=v if v then enableIJ() else disableIJ() end end)
+setters.FOVChanger = mkToggle(scroll,"FOV Changer","🔭",L,row(8),function(v) cfg.FOVChanger=v pcall(function() workspace.CurrentCamera.FieldOfView=v and cfg.FOV or 70 end) end)
+mkNum(scroll,"FOV",R,row(8),70,30,120,function(v) cfg.FOV=v if cfg.FOVChanger then pcall(function() workspace.CurrentCamera.FieldOfView=v end) end end)
 
 -- ── ROW 9 ──
-mkNum(scroll,"Grab Radius",L,row(9),20,5,200,function(v) cfg.GrabRadius=v end)
-setters.BatAimbot = mkToggle(scroll,"Bat Aimbot","🎯",R,row(9),function(v) cfg.BatAimbot=v if v then enableBatAim() else disableBatAim() end end)
+setters.HitboxExpander = mkToggle(scroll,"Hitbox Exp","🎯",L,row(9),function(v) cfg.HitboxExpander=v if v then enableHitbox() else disableHitbox() end end)
+mkNum(scroll,"Hitbox Sz",R,row(9),8,2,50,function(v) cfg.HitboxSize=v if cfg.HitboxExpander then disableHitbox() enableHitbox() end end)
 
 -- ── ROW 10 ──
-setters.AutoLeft = mkToggle(scroll,"Auto Left","⬅️",L,row(10),function(v) if v then enableAutoLeft() else disableAutoLeft() end end)
-setters.FOVChanger = mkToggle(scroll,"FOV Changer","🔭",R,row(10),function(v) cfg.FOVChanger=v pcall(function() workspace.CurrentCamera.FieldOfView=v and cfg.FOV or 70 end) end)
+setters.GalaxySky = mkToggle(scroll,"Galaxy Sky","🌌",L,row(10),function(v) cfg.GalaxySky=v if v then enableGalaxy() else disableGalaxy() end end)
+setters.OverheadSpeed = mkToggle(scroll,"Overhead Spd","🏃",R,row(10),function(v) cfg.OverheadSpeed=v if v then enableOverhead() else disableOverhead() end end)
 
 -- ── ROW 11 ──
-setters.AutoRight = mkToggle(scroll,"Auto Right","➡️",L,row(11),function(v) if v then enableAutoRight() else disableAutoRight() end end)
-mkNum(scroll,"FOV",R,row(11),70,30,120,function(v) cfg.FOV=v if cfg.FOVChanger then pcall(function() workspace.CurrentCamera.FieldOfView=v end) end end)
-
--- ── ROW 12 ──
-setters.HitboxExpander = mkToggle(scroll,"Hitbox Exp","🎯",L,row(12),function(v) cfg.HitboxExpander=v if v then enableHitbox() else disableHitbox() end end)
-setters.GalaxySky = mkToggle(scroll,"Galaxy Sky","🌌",R,row(12),function(v) cfg.GalaxySky=v if v then enableGalaxy() else disableGalaxy() end end)
-
--- ── ROW 13 ──
-mkNum(scroll,"Hitbox Sz",L,row(13),8,2,50,function(v) cfg.HitboxSize=v if cfg.HitboxExpander then disableHitbox() enableHitbox() end end)
-setters.OverheadSpeed = mkToggle(scroll,"Overhead Spd","🏃",R,row(13),function(v) cfg.OverheadSpeed=v if v then enableOverhead() else disableOverhead() end end)
-
--- ── ROW 14 ──
-setters.AutoPlay = mkToggle(scroll,"Auto Play","▶️",L,row(14),function(v) cfg.AutoPlay=v if v then enableAutoPlay() else disableAutoPlay() end end)
-setters.CarrySpeed = mkToggle(scroll,"Carry Speed","🏃",R,row(14),function(v) cfg.CarrySpeed=v acCarry(v) local c=lp.Character local hum=c and c:FindFirstChildOfClass("Humanoid") if hum then pcall(function() hum.WalkSpeed=v and 30 or cfg.NormalSpeed end) end end)
-
--- ── ROW 15 ──
-mkNum(scroll,"Normal Spd",L,row(15),16,1,200,function(v) cfg.NormalSpeed=v if not cfg.CarrySpeed then local c=lp.Character local hum=c and c:FindFirstChildOfClass("Humanoid") if hum then pcall(function() hum.WalkSpeed=v end) end end end)
+setters.AutoPlay = mkToggle(scroll,"Auto Play","▶️",L,row(11),function(v) cfg.AutoPlay=v if v then enableAutoPlay() else disableAutoPlay() end end)
 
 -- ════════════════════════════════════
 --  TOGGLE BUTTON + SIDE STRIP CLICKS
@@ -705,45 +897,69 @@ toggleBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-sAutoLeft.MouseButton1Click:Connect(function()
-    if alEnabled then disableAutoLeft() setters.AutoLeft(false,true)
-    else enableAutoLeft() end
+clkLeft(function()
+    if alEnabled then disableAutoLeft() else enableAutoLeft() end
 end)
-sAutoDuel.MouseButton1Click:Connect(function()
-    cfg.AutoDuel=not cfg.AutoDuel setters.AutoDuel(cfg.AutoDuel,true) acDuel(cfg.AutoDuel)
+clkDuel(function()
+    cfg.AutoDuel=not cfg.AutoDuel acDuel(cfg.AutoDuel)
     if cfg.AutoDuel then startDuel() else stopDuel() end
 end)
-sAutoRight.MouseButton1Click:Connect(function()
-    if arEnabled then disableAutoRight() setters.AutoRight(false,true)
-    else enableAutoRight() end
+clkRight(function()
+    if arEnabled then disableAutoRight() else enableAutoRight() end
 end)
-sBatAim.MouseButton1Click:Connect(function()
+clkBat(function()
     cfg.BatAimbot=not cfg.BatAimbot setters.BatAimbot(cfg.BatAimbot,true) acBat(cfg.BatAimbot)
     if cfg.BatAimbot then enableBatAim() else disableBatAim() end
     if cfg.BatAimbot and not cfg.AutoBat then cfg.AutoBat=true setters.AutoBat(true,true) enableAutoBat() end
     if not cfg.BatAimbot and cfg.AutoBat then cfg.AutoBat=false setters.AutoBat(false,true) disableAutoBat() end
 end)
-
-sDropBR.MouseButton1Click:Connect(function()
+clkDrop(function()
     enableDropBR()
     acDrop(true)
-    task.delay(0.5, function() acDrop(false) end)
+    task.delay(0.7,function() acDrop(false) end)
 end)
-
-sCarry.MouseButton1Click:Connect(function()
+clkCarry(function()
     cfg.CarrySpeed=not cfg.CarrySpeed
     if setters.CarrySpeed then setters.CarrySpeed(cfg.CarrySpeed,true) end
     acCarry(cfg.CarrySpeed)
-    local c=lp.Character local hum=c and c:FindFirstChildOfClass("Humanoid")
-    if hum then hum.WalkSpeed=cfg.CarrySpeed and 30 or cfg.NormalSpeed end
+    applySpeed()
+end)
+clkInfJ(function()
+    cfg.InfiniteJump=not cfg.InfiniteJump
+    if setters.InfiniteJump then setters.InfiniteJump(cfg.InfiniteJump,true) end
+    acInfJ(cfg.InfiniteJump)
+    if cfg.InfiniteJump then enableIJ() else disableIJ() end
+end)
+clkBatP(function()
+    cfg.BatAimbot=not cfg.BatAimbot
+    if setters.BatAimbot then setters.BatAimbot(cfg.BatAimbot,true) end
+    acBatP(cfg.BatAimbot) acBat(cfg.BatAimbot)
+    if cfg.BatAimbot then enableBatAim() else disableBatAim() end
+    if cfg.BatAimbot and not cfg.AutoBat then cfg.AutoBat=true if setters.AutoBat then setters.AutoBat(true,true) end enableAutoBat() end
+    if not cfg.BatAimbot and cfg.AutoBat then cfg.AutoBat=false if setters.AutoBat then setters.AutoBat(false,true) end disableAutoBat() end
+end)
+clkMelP(function()
+    cfg.MeleeAimbot=not cfg.MeleeAimbot
+    if setters.MeleeAimbot then setters.MeleeAimbot(cfg.MeleeAimbot,true) end
+    acMelP(cfg.MeleeAimbot)
+    if cfg.MeleeAimbot then enableMelee() else disableMelee() end
+end)
+clkRagTP(function()
+    cfg.RagdollTP=not cfg.RagdollTP
+    if setters.RagdollTP then setters.RagdollTP(cfg.RagdollTP,true) end
+    acRagTP(cfg.RagdollTP)
+    if cfg.RagdollTP then enableRagTP() else disableRagTP() end
 end)
 
 RunService.Heartbeat:Connect(function()
-    if not alEnabled then acLeft(false) end
-    if not arEnabled then acRight(false) end
-    if not cfg.AutoDuel then acDuel(false) end
-    if not cfg.BatAimbot then acBat(false) end
-    if not cfg.CarrySpeed then acCarry(false) end
+    if not alEnabled        then acLeft(false)  end
+    if not arEnabled        then acRight(false) end
+    if not cfg.AutoDuel     then acDuel(false)  end
+    if not cfg.BatAimbot    then acBat(false) acBatP(false) end
+    if not cfg.CarrySpeed   then acCarry(false) end
+    if not cfg.InfiniteJump then acInfJ(false)  end
+    if not cfg.MeleeAimbot  then acMelP(false)  end
+    if not cfg.RagdollTP    then acRagTP(false) end
 end)
 
 -- ════════════════════════════════════
@@ -761,7 +977,36 @@ lp.CharacterAdded:Connect(function()
     if cfg.OverheadSpeed then task.wait(1) enableOverhead() end
     dropping=false cfg.DropBR=false
     if setters.DropBR then setters.DropBR(false,true) end
+    if cfg.RagdollTP then disableRagTP() task.wait(0.5) enableRagTP() end
 end)
 
 print("[ThunderHub] Loaded!")
 pcall(function() StarterGui:SetCore("SendNotification",{Title="⚡ ThunderHub";Text="Loaded! Press ⚡ to toggle.";Duration=5}) end)
+
+-- Load saved config (positions + states)
+loadConfig()
+-- Apply any saved toggle states
+task.wait(0.5)
+if cfg.SpeedBoost then applySpeed() end
+if cfg.StealBoost then applySpeed() end
+if cfg.CarrySpeed then applySpeed() acCarry(true) end
+if cfg.AutoSteal  then createCircle() enableSteal() end
+if cfg.AutoDuel   then startDuel() acDuel(true) end
+if cfg.AntiRagdoll then enableAntiRag() end
+if cfg.MeleeAimbot then enableMelee() acMelP(true) end
+if cfg.BatAimbot  then enableBatAim() acBat(true) acBatP(true) end
+if cfg.AutoBat    then enableAutoBat() end
+if cfg.ESPPlayers then enableESP() end
+if cfg.Optimizer  then enableOpt() end
+if cfg.NoAnimation then enableNoAnim() end
+if cfg.InfiniteJump then enableIJ() acInfJ(true) end
+if cfg.SpinBot    then enableSpin() end
+if cfg.FOVChanger then pcall(function() workspace.CurrentCamera.FieldOfView=cfg.FOV end) end
+if cfg.GalaxySky  then enableGalaxy() end
+if cfg.HitboxExpander then enableHitbox() end
+if cfg.OverheadSpeed then enableOverhead() end
+if cfg.AutoPlay   then enableAutoPlay() end
+if cfg.RagdollTP  then enableRagTP() acRagTP(true) end
+if cfg.AutoLeft   then enableAutoLeft() end
+if cfg.AutoRight  then enableAutoRight() end
+for k,setter in pairs(setters) do if cfg[k] then pcall(function() setter(cfg[k],true) end) end end
