@@ -937,69 +937,69 @@ setters.OverheadSpeed = mkToggle(scroll,"Overhead Spd","🏃",R,row(10),function
 setters.AutoPlay = mkToggle(scroll,"Auto Play","▶️",L,row(11),function(v) cfg.AutoPlay=v if v then enableAutoPlay() else disableAutoPlay() end end)
 
 -- ════════════════════════════════════
---  BOTTOM AUTO STEAL BAR (top-right, two input boxes)
+--  AUTO STEAL BOTTOM BAR
 -- ════════════════════════════════════
 local bottomBar=Instance.new("Frame",screenGui)
-bottomBar.Size=UDim2.new(0,220,0,72) bottomBar.Position=UDim2.new(1,-228,0,90)
-bottomBar.BackgroundColor3=Color3.fromRGB(12,12,16) bottomBar.BorderSizePixel=0 bottomBar.ZIndex=100
-Instance.new("UICorner",bottomBar).CornerRadius=UDim.new(0,10)
-Instance.new("UIStroke",bottomBar).Color=C.yellow
+bottomBar.Size=UDim2.new(1,0,0,64) bottomBar.Position=UDim2.new(0,0,1,-64)
+bottomBar.BackgroundColor3=Color3.fromRGB(10,10,14) bottomBar.BorderSizePixel=0 bottomBar.ZIndex=100
 
--- title
+-- fat yellow top border line
+local fatLine=Instance.new("Frame",bottomBar)
+fatLine.Size=UDim2.new(1,0,0,4) fatLine.Position=UDim2.new(0,0,0,0)
+fatLine.BackgroundColor3=C.yellow fatLine.BorderSizePixel=0 fatLine.ZIndex=101
+
+-- icon + title
 local bbTitle=Instance.new("TextLabel",bottomBar)
-bbTitle.Size=UDim2.new(1,0,0,18) bbTitle.Position=UDim2.new(0,0,0,0)
-bbTitle.BackgroundTransparency=1 bbTitle.Text="🎯  Auto Steal"
-bbTitle.TextColor3=C.yellow bbTitle.TextSize=11 bbTitle.Font=Enum.Font.GothamBold
-bbTitle.TextXAlignment=Enum.TextXAlignment.Center
+bbTitle.Size=UDim2.new(0,140,1,0) bbTitle.Position=UDim2.new(0,12,0,0)
+bbTitle.BackgroundTransparency=1 bbTitle.Text="🎯  AUTO STEAL"
+bbTitle.TextColor3=C.yellow bbTitle.TextSize=14 bbTitle.Font=Enum.Font.GothamBold
+bbTitle.TextXAlignment=Enum.TextXAlignment.Left
 
--- divider
-local bbDiv=Instance.new("Frame",bottomBar)
-bbDiv.Size=UDim2.new(1,-16,0,1) bbDiv.Position=UDim2.new(0,8,0,19)
-bbDiv.BackgroundColor3=Color3.fromRGB(80,60,0) bbDiv.BorderSizePixel=0
-
--- helper to make a label+box pair
-local function bbInput(labelTxt, yOff, defaultTxt, onFocusLost)
+-- helper: big visible label + input box
+local function bbInput(lx, labelTxt, shortTxt, defaultTxt, onDone)
+    -- big label
     local lbl=Instance.new("TextLabel",bottomBar)
-    lbl.Size=UDim2.new(0,70,0,22) lbl.Position=UDim2.new(0,8,0,yOff)
+    lbl.Size=UDim2.new(0,120,0,22) lbl.Position=UDim2.new(0,lx,0,8)
     lbl.BackgroundTransparency=1 lbl.Text=labelTxt
     lbl.TextColor3=Color3.fromRGB(200,200,230) lbl.TextSize=10 lbl.Font=Enum.Font.GothamBold
     lbl.TextXAlignment=Enum.TextXAlignment.Left
 
+    -- short tag
+    local tag=Instance.new("TextLabel",bottomBar)
+    tag.Size=UDim2.new(0,32,0,18) tag.Position=UDim2.new(0,lx,0,32)
+    tag.BackgroundColor3=C.yellow tag.BorderSizePixel=0
+    tag.Text=shortTxt tag.TextColor3=Color3.fromRGB(0,0,0)
+    tag.TextSize=9 tag.Font=Enum.Font.GothamBold tag.TextXAlignment=Enum.TextXAlignment.Center
+    Instance.new("UICorner",tag).CornerRadius=UDim.new(0,4)
+
+    -- input box
     local box=Instance.new("TextBox",bottomBar)
-    box.Size=UDim2.new(0,64,0,22) box.Position=UDim2.new(1,-72,0,yOff)
-    box.BackgroundColor3=Color3.fromRGB(10,10,14) box.BorderSizePixel=0
+    box.Size=UDim2.new(0,72,0,28) box.Position=UDim2.new(0,lx+36,0,26)
+    box.BackgroundColor3=Color3.fromRGB(18,18,24) box.BorderSizePixel=0
     box.Text=defaultTxt box.TextColor3=C.yellow
-    box.TextSize=11 box.Font=Enum.Font.GothamBold
+    box.TextSize=13 box.Font=Enum.Font.GothamBold
     box.TextXAlignment=Enum.TextXAlignment.Center box.ClearTextOnFocus=false
-    Instance.new("UICorner",box).CornerRadius=UDim.new(0,5)
-    local sk=Instance.new("UIStroke",box) sk.Color=C.numStroke sk.Thickness=1
-    box.Focused:Connect(function() TweenService:Create(sk,TweenInfo.new(0.12),{Color=C.yellow}):Play() end)
+    Instance.new("UICorner",box).CornerRadius=UDim.new(0,6)
+    local sk=Instance.new("UIStroke",box) sk.Color=C.yellow sk.Thickness=2
+    box.Focused:Connect(function() TweenService:Create(sk,TweenInfo.new(0.12),{Color=Color3.fromRGB(255,255,100)}):Play() end)
     box.FocusLost:Connect(function()
-        TweenService:Create(sk,TweenInfo.new(0.15),{Color=C.numStroke}):Play()
-        onFocusLost(box)
+        TweenService:Create(sk,TweenInfo.new(0.15),{Color=C.yellow}):Play()
+        onDone(box)
     end)
     return box
 end
 
-bbInput("Radius (RD)", 24, "20", function(box)
+bbInput(158, "Radius — steal circle size", "RD", "20", function(box)
     local n=tonumber(box.Text)
     if n then cfg.GrabRadius=math.clamp(n,1,300) box.Text=tostring(cfg.GrabRadius)
     else box.Text=tostring(cfg.GrabRadius) end
 end)
 
-bbInput("Steal Delay (SD)", 48, "0.5", function(box)
+bbInput(308, "Steal Delay — how fast (sec)", "SD", "0.5", function(box)
     local n=tonumber(box.Text)
     if n then cfg.StealSpeed=math.clamp(n,0.05,10) box.Text=tostring(cfg.StealSpeed)
     else box.Text=tostring(cfg.StealSpeed) end
 end)
-
--- drag bottom bar
-do
-    local dr,ds,sp=false,nil,nil
-    bottomBar.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then dr=true ds=i.Position sp=bottomBar.Position end end)
-    UserInputService.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then dr=false end end)
-    UserInputService.InputChanged:Connect(function(i) if dr and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then local d=i.Position-ds bottomBar.Position=UDim2.new(sp.X.Scale,sp.X.Offset+d.X,sp.Y.Scale,sp.Y.Offset+d.Y) end end)
-end
 
 -- ════════════════════════════════════
 --  TOGGLE BUTTON + SIDE STRIP CLICKS
