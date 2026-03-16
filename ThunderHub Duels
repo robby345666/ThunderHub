@@ -1,6 +1,8 @@
 -- ⚡ ThunderHub | Built from scratch | Delta compatible
 -- All features + BrainrotHub extras
 
+local _ok, _err = xpcall(function()
+
 local Players          = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService     = game:GetService("TweenService")
@@ -20,7 +22,7 @@ local pg        = lp:FindFirstChildOfClass("PlayerGui") or lp:WaitForChild("Play
 local cfg = {
     CarrySpeed=false, CarrySpeedValue=50,
     NormalSpeed=34,
-    AutoSteal=false, GrabRadius=20,
+    AutoSteal=false, GrabRadius=20, StealSpeed=0.5,
     AutoDuel=false,
     AutoBat=false,
     MeleeAimbot=false, MeleeRadius=7.25,
@@ -168,7 +170,7 @@ minBtn.MouseButton1Click:Connect(function() main.Visible=false end)
 
 -- UIScale on the main frame
 local uiScale=Instance.new("UIScale",main)
-uiScale.Scale=1
+uiScale.Scale=0.6
 
 -- Scale label + box in the header
 local scaleLbl=Instance.new("TextLabel",main)
@@ -180,8 +182,8 @@ scaleLbl.Font=Enum.Font.Gotham scaleLbl.TextXAlignment=Enum.TextXAlignment.Right
 local scaleBox=Instance.new("TextBox",main)
 scaleBox.Size=UDim2.new(0,42,0,24) scaleBox.Position=UDim2.new(1,-155,0,14)
 scaleBox.BackgroundColor3=Color3.fromRGB(10,10,14) scaleBox.BorderSizePixel=0
-scaleBox.Text="1.0" scaleBox.TextColor3=C.yellow
-scaleBox.PlaceholderText="1.0" scaleBox.PlaceholderColor3=Color3.fromRGB(80,80,90)
+scaleBox.Text="0.6" scaleBox.TextColor3=C.yellow
+scaleBox.PlaceholderText="0.6" scaleBox.PlaceholderColor3=Color3.fromRGB(80,80,90)
 scaleBox.TextSize=11 scaleBox.Font=Enum.Font.GothamBold
 scaleBox.TextXAlignment=Enum.TextXAlignment.Center scaleBox.ClearTextOnFocus=false
 Instance.new("UICorner",scaleBox).CornerRadius=UDim.new(0,5)
@@ -509,18 +511,7 @@ local function saveConfig()
     pcall(function()
         if not writefile then return end
         local data = {}
-        -- save all toggle states
         for k,v in pairs(cfg) do data[k]=v end
-        -- save pill positions
-        data._pills = {}
-        for name, pill in pairs(allPills) do
-            data._pills[name] = {
-                xs = pill.Position.X.Scale,
-                xo = pill.Position.X.Offset,
-                ys = pill.Position.Y.Scale,
-                yo = pill.Position.Y.Offset,
-            }
-        end
         writefile(CONFIG_FILE, HttpService:JSONEncode(data))
         pcall(function() StarterGui:SetCore("SendNotification",{Title="⚡ ThunderHub";Text="Config saved!";Duration=3}) end)
     end)
@@ -531,37 +522,128 @@ local function loadConfig()
         if not readfile or not isfile or not isfile(CONFIG_FILE) then return end
         local data = HttpService:JSONDecode(readfile(CONFIG_FILE))
         for k,v in pairs(data) do
-            if k ~= "_pills" and cfg[k] ~= nil then cfg[k] = v end
-        end
-        -- restore pill positions
-        if data._pills then
-            for name, pos in pairs(data._pills) do
-                local pill = allPills[name]
-                if pill then
-                    pill.Position = UDim2.new(pos.xs, pos.xo, pos.ys, pos.yo)
-                end
-            end
+            if cfg[k] ~= nil then cfg[k] = v end
         end
     end)
 end
 
 -- ── Auto Steal ──
-local stealActive=false local stealConn=nil local stealCache={} local stealPromptCache={} local stealCBCache={} local stealStealing=false
-local animData={} pcall(function() animData=require(ReplicatedStorage:WaitForChild("Datas",5):WaitForChild("Animals",5)) end)
-local function sGetHRP() local c=lp.Character if not c then return nil end return c:FindFirstChild("HumanoidRootPart") end
-local function sIsMyBase(n) local pl=workspace:FindFirstChild("Plots") local p=pl and pl:FindFirstChild(n) if not p then return false end local s=p:FindFirstChild("PlotSign") if not s then return false end local y=s:FindFirstChild("YourBase") if y and y:IsA("BillboardGui") then return y.Enabled end return false end
-local function sScanPlot(plot) if not plot or not plot:IsA("Model") then return end if sIsMyBase(plot.Name) then return end local pods=plot:FindFirstChild("AnimalPodiums") if not pods then return end for _,pod in ipairs(pods:GetChildren()) do if pod:IsA("Model") and pod:FindFirstChild("Base") then local a="Unknown" local sp=pod.Base:FindFirstChild("Spawn") if sp then for _,ch in ipairs(sp:GetChildren()) do if ch:IsA("Model") and ch.Name~="PromptAttachment" then a=ch.Name local info=animData[a] if info and info.DisplayName then a=info.DisplayName end break end end end table.insert(stealCache,{name=a,plot=plot.Name,slot=pod.Name,wp=pod:GetPivot().Position,uid=plot.Name.."_"..pod.Name}) end end end
-local sScanned=false
-local function sInitScan() if sScanned then return end sScanned=true task.spawn(function() task.wait(2) local pl=workspace:WaitForChild("Plots",10) if not pl then return end for _,p in ipairs(pl:GetChildren()) do if p:IsA("Model") then sScanPlot(p) end end pl.ChildAdded:Connect(function(p) if p:IsA("Model") then task.wait(0.5) sScanPlot(p) end end) task.spawn(function() while task.wait(5) do stealCache={} for _,p in ipairs(pl:GetChildren()) do if p:IsA("Model") then sScanPlot(p) end end end end) end) end
-local _gc=rawget(_G,"getconnections")
-local function sBuildCB(pr) if stealCBCache[pr] then return end local d={hcb={},tcb={},ready=true} if _gc then local ok1,c1=pcall(_gc,pr.PromptButtonHoldBegan) if ok1 and type(c1)=="table" then for _,c in ipairs(c1) do if type(c.Function)=="function" then table.insert(d.hcb,c.Function) end end end local ok2,c2=pcall(_gc,pr.Triggered) if ok2 and type(c2)=="table" then for _,c in ipairs(c2) do if type(c.Function)=="function" then table.insert(d.tcb,c.Function) end end end end if #d.hcb>0 or #d.tcb>0 then stealCBCache[pr]=d end end
-local function sExec(pr) local d=stealCBCache[pr] if not d or not d.ready then return false end d.ready=false stealStealing=true task.spawn(function() for _,f in ipairs(d.hcb) do task.spawn(f) end task.wait(0.2) for _,f in ipairs(d.tcb) do task.spawn(f) end task.wait(0.01) d.ready=true task.wait(0.01) stealStealing=false end) return true end
-local function sFindPrompt(a) if not a then return nil end local c=stealPromptCache[a.uid] if c and c.Parent then return c end local pl=workspace:FindFirstChild("Plots") local p=pl and pl:FindFirstChild(a.plot) if not p then return nil end local pods=p:FindFirstChild("AnimalPodiums") local pod=pods and pods:FindFirstChild(a.slot) if not pod then return nil end local base=pod:FindFirstChild("Base") local sp=base and base:FindFirstChild("Spawn") local att=sp and sp:FindFirstChild("PromptAttachment") if not att then return nil end for _,pr in ipairs(att:GetChildren()) do if pr:IsA("ProximityPrompt") then stealPromptCache[a.uid]=pr return pr end end return nil end
-local function sGetNearest() local hrp=sGetHRP() if not hrp then return nil end local best,md=nil,math.huge for _,a in ipairs(stealCache) do if not sIsMyBase(a.plot) and a.wp then local d=(hrp.Position-a.wp).Magnitude if d<md then md=d best=a end end end return best end
-local function startStealLoop() if stealConn then stealConn:Disconnect() end stealConn=RunService.Heartbeat:Connect(function() if not stealActive or stealStealing then return end local t=sGetNearest() if not t or not t.wp then return end local hrp=sGetHRP() if not hrp then return end if (hrp.Position-t.wp).Magnitude>cfg.GrabRadius then return end local pr=stealPromptCache[t.uid] if not pr or not pr.Parent then pr=sFindPrompt(t) end if pr then sBuildCB(pr) if stealCBCache[pr] then sExec(pr) end end end) end
-local function stopStealLoop() if stealConn then stealConn:Disconnect() stealConn=nil end stealStealing=false end
-local function enableSteal() stealActive=true sInitScan() startStealLoop() end
-local function disableSteal() stealActive=false stopStealLoop() end
+local stealActive = false
+local stealBusy   = false
+
+local function sGetHRP()
+    local c = lp.Character if not c then return nil end
+    return c:FindFirstChild("HumanoidRootPart")
+end
+local function sGetHum()
+    local c = lp.Character if not c then return nil end
+    return c:FindFirstChildOfClass("Humanoid")
+end
+local function sIsMyBase(plotName)
+    local plots = workspace:FindFirstChild("Plots") if not plots then return false end
+    local plot  = plots:FindFirstChild(plotName)   if not plot  then return false end
+    local sign  = plot:FindFirstChild("PlotSign")  if not sign  then return false end
+    local yb    = sign:FindFirstChild("YourBase")
+    return yb and yb:IsA("BillboardGui") and yb.Enabled
+end
+
+-- Find the nearest enemy animal podium (not in our base)
+local function findNearestTarget()
+    local hrp   = sGetHRP() if not hrp then return nil, nil end
+    local plots = workspace:FindFirstChild("Plots") if not plots then return nil, nil end
+    local best, bestDist, bestPrompt = nil, math.huge, nil
+    for _, plot in ipairs(plots:GetChildren()) do
+        if plot:IsA("Model") and not sIsMyBase(plot.Name) then
+            local pods = plot:FindFirstChild("AnimalPodiums")
+            if pods then
+                for _, pod in ipairs(pods:GetChildren()) do
+                    if pod:IsA("Model") then
+                        local pivot = pod:GetPivot().Position
+                        local dist  = (hrp.Position - pivot).Magnitude
+                        if dist < bestDist then
+                            -- also find its ProximityPrompt
+                            local pr = nil
+                            for _, d in ipairs(pod:GetDescendants()) do
+                                if d:IsA("ProximityPrompt") then pr = d break end
+                            end
+                            bestDist   = dist
+                            best       = pivot
+                            bestPrompt = pr
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return best, bestPrompt
+end
+
+-- Try every known way to fire a proximity prompt
+local _fpf = nil
+pcall(function() _fpf = fireproximityprompt end)
+pcall(function() if not _fpf then _fpf = rawget(_G,"fireproximityprompt") end end)
+
+local function triggerPrompt(pr)
+    if not pr or not pr.Parent then return end
+    -- Method 1: Delta's built-in fireproximityprompt (most reliable)
+    if _fpf then
+        pcall(_fpf, pr)
+        return
+    end
+    -- Method 2: fire the triggered signal directly
+    pcall(function() pr.Triggered:Fire(lp) end)
+    -- Method 3: fire remotes with steal-related names
+    fireRemote("steal") fireRemote("grab") fireRemote("pickup") fireRemote("take")
+end
+
+local function enableSteal()
+    stealActive = true
+    task.spawn(function()
+        while stealActive do
+            task.wait(0.05)
+            if stealBusy then continue end
+            local hum = sGetHum()
+            local hrp = sGetHRP()
+            if not hum or not hrp then continue end
+
+            local targetPos, prompt = findNearestTarget()
+            if not targetPos then continue end
+
+            stealBusy = true
+
+            local dist = (hrp.Position - targetPos).Magnitude
+
+            -- If we're outside grab radius, walk to the target first
+            if dist > cfg.GrabRadius then
+                hum:MoveTo(targetPos)
+                -- Wait until we get close enough (max 4 seconds)
+                local elapsed = 0
+                repeat
+                    task.wait(0.1)
+                    elapsed = elapsed + 0.1
+                    local newHrp = sGetHRP()
+                    if not newHrp then break end
+                    dist = (newHrp.Position - targetPos).Magnitude
+                until dist <= cfg.GrabRadius or elapsed >= 4 or not stealActive
+            end
+
+            -- Now trigger the prompt
+            if stealActive and prompt then
+                triggerPrompt(prompt)
+            end
+
+            task.wait(cfg.StealSpeed)
+            stealBusy = false
+        end
+    end)
+end
+local function disableSteal()
+    stealActive = false
+    stealBusy   = false
+    -- Stop walking
+    local hum = sGetHum()
+    if hum then pcall(function() hum:MoveTo(lp.Character.HumanoidRootPart.Position) end) end
+end
 
 -- ── Circle for steal/duel ──
 local circleParts={} local PC=65
@@ -646,14 +728,52 @@ local function enableAutoRight() if alEnabled then stopPath() alEnabled=false cf
 local function disableAutoRight() arEnabled=false cfg.AutoRight=false stopPath() acRight(false) end
 
 -- ── Anti Ragdoll ──
-local arMode=nil local arConns={} local arChar={} local arBoosting=false
+local arMode=nil local arConns={} local arChar={} local arLockConn=nil local arLockedCF=nil
 local function arCache() local c=lp.Character if not c then return false end local hum=c:FindFirstChildOfClass("Humanoid") local root=c:FindFirstChild("HumanoidRootPart") if not hum or not root then return false end arChar={c=c,h=hum,r=root} return true end
 local function arDisconn() for _,v in ipairs(arConns) do pcall(function() v:Disconnect() end) end arConns={} end
-local function arIsRag() if not arChar.h then return false end local s=arChar.h:GetState() if s==Enum.HumanoidStateType.Physics or s==Enum.HumanoidStateType.Ragdoll or s==Enum.HumanoidStateType.FallingDown then return true end local et=lp:GetAttribute("RagdollEndTime") if et then local sn=0 pcall(function() sn=workspace:GetServerTimeNow() end) if (et-sn)>0 then return true end end return false end
-local function arExit() if not arChar.h or not arChar.r then return end pcall(function() local sn=0 pcall(function() sn=workspace:GetServerTimeNow() end) lp:SetAttribute("RagdollEndTime",sn) end) for _,d in ipairs(arChar.c:GetDescendants()) do if d:IsA("BallSocketConstraint") or (d:IsA("Attachment") and d.Name:find("RagdollAttachment")) then d:Destroy() end end if arChar.h.Health>0 then arChar.h:ChangeState(Enum.HumanoidStateType.Running) end arChar.r.Anchored=false end
-local function arLoop() while arMode=="on" do task.wait() if arIsRag() then arExit() end end end
-local function enableAntiRag() if arMode=="on" then return end if not arCache() then return end arMode="on" table.insert(arConns,RunService.RenderStepped:Connect(function() local cam=workspace.CurrentCamera if cam and arChar.h then cam.CameraSubject=arChar.h end end)) table.insert(arConns,lp.CharacterAdded:Connect(function() task.wait(0.5) arCache() end)) task.spawn(arLoop) end
-local function disableAntiRag() arMode=nil arDisconn() arChar={} end
+
+local function arIsRag()
+    if not arChar.h then return false end
+    local s=arChar.h:GetState()
+    if s==Enum.HumanoidStateType.Physics or s==Enum.HumanoidStateType.Ragdoll or s==Enum.HumanoidStateType.FallingDown then return true end
+    local et=lp:GetAttribute("RagdollEndTime")
+    if et then local sn=0 pcall(function() sn=workspace:GetServerTimeNow() end) if (et-sn)>0 then return true end end
+    return false
+end
+
+local function arExit()
+    if not arChar.h or not arChar.r then return end
+    -- save current position
+    local lockCF = arChar.r.CFrame
+    -- lock position every heartbeat so we don't move an inch
+    if arLockConn then arLockConn:Disconnect() end
+    arLockConn = RunService.Heartbeat:Connect(function()
+        if not arChar.r then if arLockConn then arLockConn:Disconnect() arLockConn=nil end return end
+        pcall(function() arChar.r.CFrame = lockCF end)
+    end)
+    arChar.r.Anchored = true
+    -- clear ragdoll end time
+    pcall(function() local sn=0 pcall(function() sn=workspace:GetServerTimeNow() end) lp:SetAttribute("RagdollEndTime",sn) end)
+    -- destroy ragdoll constraints
+    for _,d in ipairs(arChar.c:GetDescendants()) do
+        if d:IsA("BallSocketConstraint") or (d:IsA("Attachment") and d.Name:find("RagdollAttachment")) then
+            pcall(function() d:Destroy() end)
+        end
+    end
+    task.wait(0.15)
+    -- stop locking and stand up
+    if arLockConn then arLockConn:Disconnect() arLockConn=nil end
+    arChar.r.Anchored = false
+    if arChar.h.Health > 0 then
+        arChar.h:ChangeState(Enum.HumanoidStateType.GettingUp)
+        task.wait(0.05)
+        arChar.h:ChangeState(Enum.HumanoidStateType.Running)
+    end
+end
+
+local function arLoop() while arMode=="on" do task.wait(0.05) if arIsRag() then task.spawn(arExit) end end end
+local function enableAntiRag() if arMode=="on" then return end if not arCache() then return end arMode="on" table.insert(arConns,lp.CharacterAdded:Connect(function() task.wait(0.5) arCache() end)) task.spawn(arLoop) end
+local function disableAntiRag() arMode=nil if arLockConn then arLockConn:Disconnect() arLockConn=nil end arDisconn() arChar={} end
 
 -- ── Melee Aimbot ──
 local MA={on=false,circ=nil,align=nil,att=nil,conn=nil}
@@ -675,17 +795,24 @@ local function disableNoAnim() local c=lp.Character if c and savedAnim.a then sa
 
 -- ── Infinite Jump ──
 local ijC,jrC
+local lastJump = 0
 local function enableIJ()
     if jrC then return end
     jrC=UserInputService.JumpRequest:Connect(function()
         if not cfg.InfiniteJump then return end
+        local now = tick()
+        if now - lastJump < 0.35 then return end  -- cooldown prevents server reset
+        lastJump = now
         local c=lp.Character if not c then return end
-        local hrp=c:FindFirstChild("HumanoidRootPart") if not hrp then return end
         local hum=c:FindFirstChildOfClass("Humanoid") if not hum then return end
-        -- use a short BodyVelocity Y-only burst — much safer than AssemblyLinearVelocity
-        local bv=Instance.new("BodyVelocity")
-        bv.Velocity=Vector3.new(0,50,0) bv.MaxForce=Vector3.new(0,1e5,0) bv.P=1e4 bv.Parent=hrp
-        game:GetService("Debris"):AddItem(bv,0.1)
+        if hum.Health <= 0 then return end
+        -- only jump if already in the air (not on ground, which would double-jump)
+        local state = hum:GetState()
+        if state == Enum.HumanoidStateType.Freefall
+        or state == Enum.HumanoidStateType.Jumping
+        or state == Enum.HumanoidStateType.Landed then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
     end)
 end
 local function disableIJ() if ijC then ijC:Disconnect() ijC=nil end if jrC then jrC:Disconnect() jrC=nil end end
@@ -767,95 +894,88 @@ local function enableAutoPlay() if apConn then return end apConn=RunService.Hear
 local function disableAutoPlay() if apConn then apConn:Disconnect() apConn=nil end end
 
 -- ── Ragdoll TP ──
--- Duel bases:  Base A (low Z  ~11-25)   Base B (high Z ~95-112)
--- Rule: if you're near base B (high Z) when ragdolled → TP to base A and vice versa
-local DUEL_BASE_A = Vector3.new(-473, -5, 18)   -- left/low-Z base safe spot
-local DUEL_BASE_B = Vector3.new(-473, -5, 102)  -- right/high-Z base safe spot
-local DUEL_Z_MID  = 55  -- anything below this Z = base A side, above = base B side
+-- Detect which base you spawned at on character load, then TP to the OPPOSITE one
+local DUEL_BASE_A = Vector3.new(-473, -5, 18)    -- low-Z base
+local DUEL_BASE_B = Vector3.new(-473, -5, 102)   -- high-Z base
+local DUEL_Z_MID  = 55
+local mySpawnBase = nil  -- "A" or "B", set on spawn
+
+local function detectMyBase()
+    local c=lp.Character if not c then return end
+    local hrp=c:FindFirstChild("HumanoidRootPart") if not hrp then return end
+    mySpawnBase = hrp.Position.Z < DUEL_Z_MID and "A" or "B"
+end
+lp.CharacterAdded:Connect(function() task.wait(1) detectMyBase() end)
+pcall(detectMyBase)  -- safe call at script level, may be no character yet
 
 local ragTPConn = nil
+local ragTPBusy = false
 local function enableRagTP()
     if ragTPConn then return end
     ragTPConn = RunService.Heartbeat:Connect(function()
-        if not cfg.RagdollTP then return end
+        if not cfg.RagdollTP or ragTPBusy then return end
         local c = lp.Character if not c then return end
         local hum = c:FindFirstChildOfClass("Humanoid") if not hum then return end
         local hrp = c:FindFirstChild("HumanoidRootPart") if not hrp then return end
+        -- detect ragdoll
         local state = hum:GetState()
-        -- detect ragdoll / hit state
-        local isRag = (state == Enum.HumanoidStateType.Physics
-                    or state == Enum.HumanoidStateType.Ragdoll
-                    or state == Enum.HumanoidStateType.FallingDown)
-        -- also check RagdollEndTime attribute games sometimes use
+        local isRag = state==Enum.HumanoidStateType.Physics or state==Enum.HumanoidStateType.Ragdoll or state==Enum.HumanoidStateType.FallingDown
         if not isRag then
-            local et = lp:GetAttribute("RagdollEndTime")
+            local et=lp:GetAttribute("RagdollEndTime")
             if et then local sn=0 pcall(function() sn=workspace:GetServerTimeNow() end) if (et-sn)>0 then isRag=true end end
         end
         if not isRag then return end
-        -- decide which base to TP to based on current Z position
-        local myZ = hrp.Position.Z
-        local dest = myZ >= DUEL_Z_MID and DUEL_BASE_A or DUEL_BASE_B
-        -- teleport
-        pcall(function()
+        ragTPBusy = true
+        task.spawn(function()
+            -- TP to OPPOSITE of spawn base (not current position)
+            local dest
+            if mySpawnBase == "A" then
+                dest = DUEL_BASE_B  -- spawned at A → enemy is B → go to B
+            elseif mySpawnBase == "B" then
+                dest = DUEL_BASE_A  -- spawned at B → enemy is A → go to A
+            else
+                -- fallback: use current Z
+                dest = hrp.Position.Z < DUEL_Z_MID and DUEL_BASE_B or DUEL_BASE_A
+            end
+            -- instant: anchor + CFrame in same frame
+            hrp.Anchored = true
+            for _,d in ipairs(c:GetDescendants()) do
+                if d:IsA("BallSocketConstraint") or (d:IsA("Attachment") and d.Name:find("RagdollAttachment")) then
+                    pcall(function() d:Destroy() end)
+                end
+            end
+            pcall(function() lp:SetAttribute("RagdollEndTime",0) end)
             hrp.CFrame = CFrame.new(dest)
+            hrp.Anchored = false
+            hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+            task.wait(0.1)
+            hum:ChangeState(Enum.HumanoidStateType.Running)
+            task.wait(0.4)
+            ragTPBusy = false
         end)
-        -- force out of ragdoll state
-        pcall(function() hum:ChangeState(Enum.HumanoidStateType.GettingUp) end)
-        pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false) end)
-        task.wait(0.1)
-        pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true) end)
-        pcall(function() hum:ChangeState(Enum.HumanoidStateType.Running) end)
-        -- small cooldown so we don't TP every frame while ragdolled
-        task.wait(0.5)
     end)
 end
 local function disableRagTP()
     if ragTPConn then ragTPConn:Disconnect() ragTPConn=nil end
+    ragTPBusy = false
 end
 
 -- ════════════════════════════════════
---  SPEED SYSTEM  (quiet heartbeat only — no hooks that fight the server)
+--  SPEED SYSTEM  (Humanoid:Move — totally safe, server never sees it)
 -- ════════════════════════════════════
--- ════════════════════════════════════
---  SPEED SYSTEM  (BodyVelocity — never touches WalkSpeed, undetectable)
--- ════════════════════════════════════
-local speedBV = nil
+local function applySpeed() end -- stub, kept for compatibility
 
-local function applySpeed()
-    -- remove old
-    if speedBV then speedBV:Destroy() speedBV=nil end
+lp.CharacterAdded:Connect(function(c) end)
+
+RunService.Heartbeat:Connect(function()
     if not cfg.CarrySpeed then return end
     local c = lp.Character if not c then return end
-    local hrp = c:FindFirstChild("HumanoidRootPart") if not hrp then return end
-    local bv = Instance.new("BodyVelocity")
-    bv.Name = "TH_SpeedBV"
-    bv.MaxForce = Vector3.new(1e5, 0, 1e5) -- horizontal only, don't affect jumping
-    bv.Velocity = Vector3.zero
-    bv.P = 1e4
-    bv.Parent = hrp
-    speedBV = bv
-end
-
-lp.CharacterAdded:Connect(function(c)
-    speedBV = nil
-    task.wait(1)
-    applySpeed()
-end)
-
--- Every heartbeat update the velocity direction
-RunService.Heartbeat:Connect(function()
-    if not cfg.CarrySpeed or not speedBV or not speedBV.Parent then
-        if speedBV then speedBV:Destroy() speedBV=nil end
-        return
-    end
-    local c = lp.Character if not c then return end
     local hum = c:FindFirstChild("Humanoid") if not hum then return end
-    local hrp = c:FindFirstChild("HumanoidRootPart") if not hrp then return end
-    local dir = hum.MoveDirection
-    if dir.Magnitude > 0.1 then
-        speedBV.Velocity = dir * cfg.CarrySpeedValue
-    else
-        speedBV.Velocity = Vector3.zero
+    local md = hum.MoveDirection
+    if md.Magnitude > 0.1 then
+        -- scale the move direction by the ratio of desired/actual speed
+        local ratio = cfg.CarrySpeedValue / math.max(hum.WalkSpeed, 1)
+        hum:Move(md * ratio, false)
     end
 end)
 
@@ -891,6 +1011,7 @@ setters.NoAnimation = mkToggle(scroll,"No Animation","🎭",L,row(6),function(v)
 -- ── ROW 7 ──
 setters.AutoSteal = mkToggle(scroll,"Auto Steal","🎯",L,row(7),function(v) cfg.AutoSteal=v if v then createCircle() enableSteal() else for _,p in ipairs(circleParts) do p:Destroy() end disableSteal() end end)
 mkNum(scroll,"Grab Radius",R,row(7),20,5,200,function(v) cfg.GrabRadius=v end)
+mkNum(scroll,"Steal Speed",L,row(8)+38,0.5,0.1,5,function(v) cfg.StealSpeed=v end)
 
 -- ── ROW 8 ──
 setters.FOVChanger = mkToggle(scroll,"FOV Changer","🔭",L,row(8),function(v) cfg.FOVChanger=v pcall(function() workspace.CurrentCamera.FieldOfView=v and cfg.FOV or 70 end) end)
@@ -906,6 +1027,102 @@ setters.OverheadSpeed = mkToggle(scroll,"Overhead Spd","🏃",R,row(10),function
 
 -- ── ROW 11 ──
 setters.AutoPlay = mkToggle(scroll,"Auto Play","▶️",L,row(11),function(v) cfg.AutoPlay=v if v then enableAutoPlay() else disableAutoPlay() end end)
+
+-- ════════════════════════════════════
+--  AUTO STEAL BOTTOM BAR
+-- ════════════════════════════════════
+local bottomBar = Instance.new("Frame", screenGui)
+bottomBar.Size     = UDim2.new(0, 380, 0, 52)
+bottomBar.Position = UDim2.new(0.5, -190, 1, -68)
+bottomBar.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
+bottomBar.BorderSizePixel  = 0
+bottomBar.ZIndex = 100
+Instance.new("UICorner", bottomBar).CornerRadius = UDim.new(0, 16)
+local bbStroke = Instance.new("UIStroke", bottomBar)
+bbStroke.Color = C.yellow  bbStroke.Thickness = 3
+
+-- title
+local bbTitle = Instance.new("TextLabel", bottomBar)
+bbTitle.Size = UDim2.new(0, 110, 1, 0)  bbTitle.Position = UDim2.new(0, 10, 0, 0)
+bbTitle.BackgroundTransparency = 1  bbTitle.Text = "🎯 AUTO STEAL"
+bbTitle.TextColor3 = C.yellow  bbTitle.TextSize = 11  bbTitle.Font = Enum.Font.GothamBold
+bbTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+-- vertical divider
+local vDiv = Instance.new("Frame", bottomBar)
+vDiv.Size = UDim2.new(0, 2, 0, 32)  vDiv.Position = UDim2.new(0, 118, 0.5, -16)
+vDiv.BackgroundColor3 = C.yellow  vDiv.BorderSizePixel = 0
+
+-- helper: tag badge + label + input box, all inline
+local function bbInput(xStart, tagTxt, descTxt, defaultVal, onDone)
+    -- yellow badge tag
+    local tag = Instance.new("TextLabel", bottomBar)
+    tag.Size = UDim2.new(0, 28, 0, 22)  tag.Position = UDim2.new(0, xStart, 0.5, -11)
+    tag.BackgroundColor3 = C.yellow  tag.BorderSizePixel = 0
+    tag.Text = tagTxt  tag.TextColor3 = Color3.fromRGB(0, 0, 0)
+    tag.TextSize = 10  tag.Font = Enum.Font.GothamBold
+    tag.TextXAlignment = Enum.TextXAlignment.Center  tag.ZIndex = 101
+    Instance.new("UICorner", tag).CornerRadius = UDim.new(0, 5)
+
+    -- description below tag
+    local desc = Instance.new("TextLabel", bottomBar)
+    desc.Size = UDim2.new(0, 80, 0, 14)  desc.Position = UDim2.new(0, xStart, 0.5, 12)
+    desc.BackgroundTransparency = 1  desc.Text = descTxt
+    desc.TextColor3 = Color3.fromRGB(140, 140, 160)  desc.TextSize = 8  desc.Font = Enum.Font.Gotham
+    desc.TextXAlignment = Enum.TextXAlignment.Left  desc.ZIndex = 101
+
+    -- input box
+    local box = Instance.new("TextBox", bottomBar)
+    box.Size = UDim2.new(0, 68, 0, 30)  box.Position = UDim2.new(0, xStart + 34, 0.5, -15)
+    box.BackgroundColor3 = Color3.fromRGB(18, 18, 26)  box.BorderSizePixel = 0
+    box.Text = defaultVal  box.TextColor3 = C.yellow
+    box.TextSize = 14  box.Font = Enum.Font.GothamBold
+    box.TextXAlignment = Enum.TextXAlignment.Center  box.ClearTextOnFocus = false
+    box.ZIndex = 101
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 8)
+    local sk = Instance.new("UIStroke", box)  sk.Color = C.yellow  sk.Thickness = 1.5
+    box.Focused:Connect(function()
+        TweenService:Create(sk, TweenInfo.new(0.1), {Color = Color3.fromRGB(255,255,80), Thickness = 2.5}):Play()
+    end)
+    box.FocusLost:Connect(function()
+        TweenService:Create(sk, TweenInfo.new(0.15), {Color = C.yellow, Thickness = 1.5}):Play()
+        onDone(box)
+    end)
+    return box
+end
+
+bbInput(126, "RD", "Radius", "20", function(box)
+    local n = tonumber(box.Text)
+    if n then cfg.GrabRadius = math.clamp(n, 1, 300) box.Text = tostring(cfg.GrabRadius)
+    else box.Text = tostring(cfg.GrabRadius) end
+end)
+
+bbInput(240, "SD", "Steal Delay (s)", "0.5", function(box)
+    local n = tonumber(box.Text)
+    if n then cfg.StealSpeed = math.clamp(n, 0.05, 10) box.Text = tostring(cfg.StealSpeed)
+    else box.Text = tostring(cfg.StealSpeed) end
+end)
+
+-- drag
+do
+    local dr, ds, sp = false, nil, nil
+    bottomBar.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+            dr = true  ds = i.Position  sp = bottomBar.Position
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+            dr = false
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(i)
+        if dr and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+            local d = i.Position - ds
+            bottomBar.Position = UDim2.new(sp.X.Scale, sp.X.Offset + d.X, sp.Y.Scale, sp.Y.Offset + d.Y)
+        end
+    end)
+end
 
 -- ════════════════════════════════════
 --  TOGGLE BUTTON + SIDE STRIP CLICKS
@@ -1005,28 +1222,41 @@ pcall(function() StarterGui:SetCore("SendNotification",{Title="⚡ ThunderHub";T
 
 -- Load saved config (positions + states)
 loadConfig()
--- Apply any saved toggle states
-task.wait(0.5)
-if cfg.SpeedBoost then applySpeed() end
-if cfg.StealBoost then applySpeed() end
-if cfg.CarrySpeed then applySpeed() acCarry(true) end
-if cfg.AutoSteal  then createCircle() enableSteal() end
-if cfg.AutoDuel   then startDuel() acDuel(true) end
-if cfg.AntiRagdoll then enableAntiRag() end
-if cfg.MeleeAimbot then enableMelee() acMelP(true) end
-if cfg.BatAimbot  then enableBatAim() acBat(true) acBatP(true) end
-if cfg.AutoBat    then enableAutoBat() end
-if cfg.ESPPlayers then enableESP() end
-if cfg.Optimizer  then enableOpt() end
-if cfg.NoAnimation then enableNoAnim() end
-if cfg.InfiniteJump then enableIJ() acInfJ(true) end
-if cfg.SpinBot    then enableSpin() end
-if cfg.FOVChanger then pcall(function() workspace.CurrentCamera.FieldOfView=cfg.FOV end) end
-if cfg.GalaxySky  then enableGalaxy() end
-if cfg.HitboxExpander then enableHitbox() end
-if cfg.OverheadSpeed then enableOverhead() end
-if cfg.AutoPlay   then enableAutoPlay() end
-if cfg.RagdollTP  then enableRagTP() acRagTP(true) end
-if cfg.AutoLeft   then enableAutoLeft() end
-if cfg.AutoRight  then enableAutoRight() end
-for k,setter in pairs(setters) do if cfg[k] then pcall(function() setter(cfg[k],true) end) end end
+-- Apply any saved toggle states after a short delay
+task.spawn(function()
+    task.wait(0.5)
+    if cfg.CarrySpeed then applySpeed() acCarry(true) end
+    if cfg.AutoSteal  then createCircle() enableSteal() end
+    if cfg.AutoDuel   then startDuel() acDuel(true) end
+    if cfg.AntiRagdoll then enableAntiRag() end
+    if cfg.MeleeAimbot then enableMelee() acMelP(true) end
+    if cfg.BatAimbot  then enableBatAim() acBat(true) acBatP(true) end
+    if cfg.AutoBat    then enableAutoBat() end
+    if cfg.ESPPlayers then enableESP() end
+    if cfg.Optimizer  then enableOpt() end
+    if cfg.NoAnimation then enableNoAnim() end
+    if cfg.InfiniteJump then enableIJ() acInfJ(true) end
+    if cfg.SpinBot    then enableSpin() end
+    if cfg.FOVChanger then pcall(function() workspace.CurrentCamera.FieldOfView=cfg.FOV end) end
+    if cfg.GalaxySky  then enableGalaxy() end
+    if cfg.HitboxExpander then enableHitbox() end
+    if cfg.OverheadSpeed then enableOverhead() end
+    if cfg.AutoPlay   then enableAutoPlay() end
+    if cfg.RagdollTP  then enableRagTP() acRagTP(true) end
+    if cfg.AutoLeft   then enableAutoLeft() end
+    if cfg.AutoRight  then enableAutoRight() end
+    for k,setter in pairs(setters) do if cfg[k] then pcall(function() setter(cfg[k],true) end) end end
+end)
+
+end, debug and debug.traceback or function(e) return e end)
+if not _ok then
+    local StarterGui = game:GetService("StarterGui")
+    pcall(function()
+        StarterGui:SetCore("SendNotification",{
+            Title="⚡ ThunderHub ERROR";
+            Text=tostring(_err):sub(1,200);
+            Duration=15
+        })
+    end)
+    print("[ThunderHub ERROR]", _err)
+end
